@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project recreates the infrastructure from [aws-cloudwatch-monitoring](https://github.com/odysian/aws-cloudwatch-monitoring) using Terraform. I'm continuing to build on the app, adding features and learning terraform at the same time.
+This project recreates the infrastructure from [aws-cloudwatch-monitoring](https://github.com/odysian/aws-cloudwatch-monitoring) using Terraform. I'm continuing to build on the app, adding features and learning Terraform at the same time.
 
 **Key additions:** 
 - Auto scaling policies that dynamically add/remove instances based on CPU load.

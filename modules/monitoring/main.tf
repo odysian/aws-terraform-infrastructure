@@ -16,7 +16,7 @@ resource "aws_sns_topic_subscription" "alarm_email" {
 
 #Autoscaling Notifications
 resource "aws_autoscaling_notification" "scaling_notification" {
-  group_names = [aws_autoscaling_group.web.name]
+  group_names = [var.autoscaling_group_name]
 
   notifications = [
     "autoscaling:EC2_INSTANCE_LAUNCH",
@@ -38,7 +38,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix, { stat = "Average" }],
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.lb_arn_suffix, { stat = "Average" }],
             [".", "RequestCount", ".", ".", { stat = "Sum", yAxis = "right" }]
           ]
           period = 60
@@ -59,7 +59,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", aws_lb_target_group.web.arn_suffix, "LoadBalancer", aws_lb.main.arn_suffix],
+            ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", var.lb_tg_arn_suffix, "LoadBalancer", var.lb_arn_suffix],
             [".", "UnHealthyHostCount", ".", ".", ".", "."]
           ]
           period = 60
@@ -77,7 +77,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", aws_autoscaling_group.web.name, { stat = "Average" }]
+            ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", var.autoscaling_group_name, { stat = "Average" }]
           ]
           period = 60
           stat   = "Average"
@@ -95,7 +95,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.mysql.identifier],
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.db_identifier],
             [".", "DatabaseConnections", ".", "."]
           ]
           period = 60
@@ -118,7 +118,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", aws_db_instance.mysql.identifier, { stat = "Average" }]
+            ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", var.db_identifier, { stat = "Average" }]
           ]
           period = 60
           stat   = "Average"
@@ -137,7 +137,7 @@ resource "aws_cloudwatch_dashboard" "main" {
         type = "metric"
         properties = {
           metrics = [
-            ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", aws_db_instance.mysql.identifier],
+            ["AWS/RDS", "ReadLatency", "DBInstanceIdentifier", var.db_identifier],
             [".", "WriteLatency", ".", "."]
           ]
           period = 60
@@ -155,7 +155,7 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_targets" {
   alarm_name          = "${var.project_name}-unhealthy-targets"
   comparison_operator = "GreaterThanOrEqualToThreshold"
   evaluation_periods  = 2
-  metric_name         = "UnHealthyHoseCount"
+  metric_name         = "UnHealthyHostCount"
   namespace           = "AWS/ApplicationELB"
   period              = 60
   statistic           = "Average"
@@ -166,8 +166,8 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_targets" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    TargetGroup  = aws_lb_target_group.web.arn_suffix
-    LoadBalancer = aws_lb.main.arn_suffix
+    TargetGroup  = var.lb_tg_arn_suffix
+    LoadBalancer = var.lb_arn_suffix
   }
 }
 
@@ -187,7 +187,7 @@ resource "aws_cloudwatch_metric_alarm" "asg_high_cpu" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.web.name
+    AutoScalingGroupName = var.autoscaling_group_name
   }
 }
 
@@ -207,7 +207,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_high_cpu" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.mysql.identifier
+    DBInstanceIdentifier = var.db_identifier
   }
 }
 
@@ -227,7 +227,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_low_storage" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.mysql.identifier
+    DBInstanceIdentifier = var.db_identifier
   }
 }
 
@@ -246,7 +246,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_high_response_time" {
   ok_actions          = [aws_sns_topic.alarms.arn]
   treat_missing_data  = "notBreaching"
   dimensions = {
-    LoadBalancer = aws_lb.main.arn_suffix
+    LoadBalancer = var.lb_arn_suffix
   }
 }
 
@@ -259,12 +259,12 @@ resource "aws_cloudwatch_metric_alarm" "rds_low_freeable_memory" {
   namespace           = "AWS/RDS"
   period              = 300
   statistic           = "Average"
-  threshold           = 80 * 1024 * 1024
-  alarm_description   = "RDS FreeableMemory below 200MB (possible memory pressure)"
+  threshold           = 50 * 1024 * 1024
+  alarm_description   = "RDS FreeableMemory below 50MB (possible memory pressure)"
   alarm_actions       = [aws_sns_topic.alarms.arn]
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.mysql.identifier
+    DBInstanceIdentifier = var.db_identifier
   }
 }

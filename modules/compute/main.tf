@@ -1,4 +1,3 @@
-
 # Data source to get latest Amazon Linux 2023 AMI
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true
@@ -21,7 +20,7 @@ resource "aws_launch_template" "web" {
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
 
-  vpc_security_group_ids = [aws_security_group.web.id]
+  vpc_security_group_ids = [var.web_security_group_id]
 
   # Allow IMDSv1 and v2 (v1 needed for PHP metadata calls)
   metadata_options {
@@ -29,12 +28,7 @@ resource "aws_launch_template" "web" {
     http_endpoint = "enabled"
   }
 
-  user_data = base64encode(templatefile("${path.module}/scripts/user_data.sh", {
-    db_host = aws_db_instance.mysql.address
-    db_name = aws_db_instance.mysql.db_name
-    db_user = aws_db_instance.mysql.username
-    db_pass = aws_db_instance.mysql.password
-  }))
+  user_data = base64encode(var.user_data)
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
@@ -100,8 +94,8 @@ resource "aws_lb" "main" {
   name               = "${var.project_name}-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.web.id]
-  subnets            = aws_subnet.public[*].id
+  security_groups    = [var.web_security_group_id]
+  subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false
 
@@ -115,7 +109,7 @@ resource "aws_lb_target_group" "web" {
   name     = "${var.project_name}-tg"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
+  vpc_id   = var.vpc_id
 
   health_check {
     enabled             = true
@@ -147,11 +141,10 @@ resource "aws_lb_listener" "http" {
 # Auto Scaling Group
 resource "aws_autoscaling_group" "web" {
   name                      = "${var.project_name}-asg"
-  vpc_zone_identifier       = aws_subnet.public[*].id
+  vpc_zone_identifier       = var.public_subnet_ids
   target_group_arns         = [aws_lb_target_group.web.arn]
   health_check_type         = "ELB"
   health_check_grace_period = 300
-  depends_on                = [aws_db_instance.mysql]
 
   min_size         = var.asg_min_size
   max_size         = var.asg_max_size
