@@ -16,13 +16,13 @@ variable "db_name" {
   description = "Application database name"
   type        = string
 }
-variable "vpc_security_group_ids" {
-  description = "Security group IDs"
-  type        = list(string)
-}
 variable "private_subnet_ids" {
   description = "Private Subnet IDs"
   type        = list(string)
+}
+variable "database_security_group_id" {
+  description = "DB Security group id"
+  type        = string
 }
 
 

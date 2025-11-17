@@ -28,7 +28,12 @@ resource "aws_launch_template" "web" {
     http_endpoint = "enabled"
   }
 
-  user_data = base64encode(var.user_data)
+  user_data = base64encode(templatefile("${path.root}/scripts/user_data.sh", {
+    db_host = var.db_host
+    db_name = var.db_name
+    db_user = var.db_username
+    db_pass = var.db_password
+  }))
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
@@ -160,6 +165,8 @@ resource "aws_autoscaling_group" "web" {
     value               = "${var.project_name}-asg-instance"
     propagate_at_launch = true
   }
+
+  depends_on = [var.db_endpoint]
 }
 
 resource "aws_autoscaling_policy" "scale_up" {

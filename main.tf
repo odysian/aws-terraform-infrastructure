@@ -20,27 +20,23 @@ module "compute" {
   public_subnet_ids     = module.networking.public_subnet_ids
   web_security_group_id = module.networking.web_security_group_id
   vpc_id                = module.networking.vpc_id
-  user_data             = local.web_user_data
-}
-
-locals {
-  web_user_data = templatefile("${path.module}/scripts/user_data.sh", {
-    db_host = module.database.db_endpoint
-    db_name = var.db_name
-    db_user = var.db_username
-    db_pass = var.db_password
-  })
+  db_host               = module.database.db_host
+  db_name               = var.db_name
+  db_username           = var.db_username
+  db_password           = var.db_password
+  db_endpoint           = module.database.db_endpoint
 }
 
 module "database" {
   source = "./modules/database"
 
-  db_name                = var.db_name
-  db_password            = var.db_password
-  db_username            = var.db_username
-  project_name           = var.project_name
-  vpc_security_group_ids = [module.networking.database_security_group_id]
-  private_subnet_ids     = module.networking.private_subnet_ids
+  db_name                    = var.db_name
+  db_password                = var.db_password
+  db_username                = var.db_username
+  project_name               = var.project_name
+  database_security_group_id = module.networking.database_security_group_id
+  private_subnet_ids         = module.networking.private_subnet_ids
+
 }
 
 module "monitoring" {

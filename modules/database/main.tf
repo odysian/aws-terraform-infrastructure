@@ -17,7 +17,7 @@ resource "aws_db_instance" "mysql" {
   allocated_storage = 20
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = var.vpc_security_group_ids
+  vpc_security_group_ids = [var.database_security_group_id]
 
   publicly_accessible = false
   skip_final_snapshot = true

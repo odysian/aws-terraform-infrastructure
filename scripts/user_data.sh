@@ -6,11 +6,14 @@ exec > /var/log/user-data.log 2>&1
 
 # System Updates & Base Packages
 dnf update -y
-dnf install -y httpd php php-mysqlnd php-cli php-common wget mariadb105
+dnf install -y httpd php php-mysqlnd php-cli php-common php-fpm wget mariadb105
 
-# Apache Setup
+# Apache + PHP-FPM Setup
 systemctl enable httpd
 systemctl start httpd
+
+systemctl enable php-fpm
+systemctl start php-fpm
 
 # Ensure proper permissions
 mkdir -p /var/www/html
@@ -41,15 +44,15 @@ $db_name = '${db_name}';
 $db_user = '${db_user}';
 $db_pass = '${db_pass}';
 
+echo "<p><strong>DB Host (template):</strong> $db_host</p>";
+echo "<p><strong>DB Name (template):</strong> $db_name</p>";
+
 if ($db_host && $db_name && $db_user) {
-    echo "<p><strong>DB Host:</strong> $db_host</p>";
-    echo "<p><strong>DB Name:</strong> $db_name</p>";
-    
     $conn = @mysqli_connect($db_host, $db_user, $db_pass, $db_name);
-    
+
     if ($conn) {
         echo "<p style='color: green;'><strong>Status:</strong> Connected successfully!</p>";
-        
+
         // Test query
         $result = @mysqli_query($conn, "SELECT NOW() as current_time, VERSION() as mysql_version");
         if ($result) {
@@ -57,7 +60,7 @@ if ($db_host && $db_name && $db_user) {
             echo "<p><strong>MySQL Version:</strong> " . $row['mysql_version'] . "</p>";
             echo "<p><strong>DB Time:</strong> " . $row['current_time'] . "</p>";
         }
-        
+
         mysqli_close($conn);
     } else {
         echo "<p style='color: red;'><strong>Status:</strong> Connection failed</p>";
@@ -80,7 +83,8 @@ chmod -R 755 /var/www/html
 wget https://amazoncloudwatch-agent.s3.amazonaws.com/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
 rpm -Uvh amazon-cloudwatch-agent.rpm || true
 
-# Restart Apache to ensure everything loads
+# Restart services to ensure everything is picked up
+systemctl restart php-fpm
 systemctl restart httpd
 
 echo "User data script completed successfully at $(date)"
