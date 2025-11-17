@@ -1,5 +1,5 @@
 module "networking" {
-  source = "./modules/networking"
+  source = "../../modules/networking"
 
   project_name         = var.project_name
   aws_region           = var.aws_region
@@ -10,7 +10,7 @@ module "networking" {
 }
 
 module "compute" {
-  source = "./modules/compute"
+  source = "../../modules/compute"
 
   project_name          = var.project_name
   instance_type         = var.instance_type
@@ -28,7 +28,7 @@ module "compute" {
 }
 
 module "database" {
-  source = "./modules/database"
+  source = "../../modules/database"
 
   db_name                    = var.db_name
   db_password                = var.db_password
@@ -40,7 +40,7 @@ module "database" {
 }
 
 module "monitoring" {
-  source = "./modules/monitoring"
+  source = "../../modules/monitoring"
 
   project_name               = var.project_name
   aws_region                 = var.aws_region

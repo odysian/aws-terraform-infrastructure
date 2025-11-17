@@ -27,10 +27,10 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
 - Auto scaling policies (CPU-based scale up/down)
 - S3 backend + DynamoDB for remote state and locking
 - Modules: Split resources into `networking`, `compute`, `database`, and `monitoring` Terraform modules
+- Multi-environment: Dev/prod directories with seperate backends
 
 **In Progress:**
 
-- Multi-environment: Dev/prod workspaces
 - Production Examples: Add WAF, read replica configs, IMDSv2
 - Polish documentation and add diagrams
 
@@ -142,6 +142,37 @@ user_data = base64encode(templatefile("${path.root}/scripts/user_data.sh", {
     - Gained better understanding of how modules rely on eachother
         - Compute depends on Database only through its variables
         - Monitoring depends on the other modules outputs
+
+### Multi-Environment Setup (dev / prod)
+
+After completing the initial modular refactor, I created  multiple environments so development and production deployments can run independently with their own Terraform state files.
+
+- There are two common strategies in Terraform for handling multiple environments:
+    - Terraform Workspaces
+    - Separate Environment Directories + Separate Backends
+
+I chose separate environment directories, as this mirrors real-world workflows more closely and provides explicit state isolation.
+
+```
+envs/
+├── dev/
+│   ├── backend.tf         # S3 backend: dev.tfstate
+│   ├── main.tf            # Calls the same root modules
+│   └── terraform.tfvars   # Dev-specific variables
+└── prod/
+    ├── backend.tf         # S3 backend: prod.tfstate
+    ├── main.tf
+    └── terraform.tfvars
+```
+Both environments reference the same set of modules, but each maintains:
+- Its own remote state
+- Its own state lock
+- Its own variable file (terraform.tfvars)
+
+Both environments were initialized and migrated successfully using:
+```bash
+terraform init -migrate-state
+```
 
 ### Troubleshooting and Incident Debugging
 

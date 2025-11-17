@@ -28,7 +28,7 @@ resource "aws_launch_template" "web" {
     http_endpoint = "enabled"
   }
 
-  user_data = base64encode(templatefile("${path.root}/scripts/user_data.sh", {
+  user_data = base64encode(templatefile("${path.module}/../../scripts/user_data.sh", {
     db_host = var.db_host
     db_name = var.db_name
     db_user = var.db_username
