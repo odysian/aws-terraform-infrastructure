@@ -21,6 +21,18 @@ resource "aws_db_parameter_group" "mysql" {
     name  = "long_query_time"
     value = "2"
   }
+
+  parameter {
+    name         = "general_log"
+    value        = "1"
+    apply_method = "immediate"
+  }
+
+  parameter {
+    name         = "log_output"
+    value        = "FILE"
+    apply_method = "immediate"
+  }
 }
 
 resource "aws_db_instance" "mysql" {
