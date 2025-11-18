@@ -22,17 +22,15 @@ resource "aws_launch_template" "web" {
 
   vpc_security_group_ids = [var.web_security_group_id]
 
-  # Allow IMDSv1 and v2 (v1 needed for PHP metadata calls)
   metadata_options {
-    http_tokens   = "optional"
-    http_endpoint = "enabled"
+    http_tokens                 = "required" # IMDSv2 only
+    http_endpoint               = "enabled"
+    http_put_response_hop_limit = 1
   }
 
-  user_data = base64encode(templatefile("${path.module}/../../scripts/user_data.sh", {
-    db_host = var.db_host
-    db_name = var.db_name
-    db_user = var.db_username
-    db_pass = var.db_password
+  user_data = base64encode(templatefile("${path.module}/../../scripts/user_data_v2.sh", {
+    db_host       = var.db_host
+    db_secret_arn = var.db_credentials_secret_arn
   }))
 
   iam_instance_profile {
@@ -86,6 +84,24 @@ resource "aws_iam_role_policy_attachment" "ssm_policy" {
 resource "aws_iam_role_policy_attachment" "cloudwatch_policy" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_role_policy" "ec2_secretsmanager_policy" {
+  name = "${var.project_name}-ec2-secretsmanager"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = var.db_credentials_secret_arn
+      }
+    ]
+  })
 }
 
 # Instance profile to attach role to EC2

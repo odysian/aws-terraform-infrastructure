@@ -49,3 +49,7 @@ variable "db_endpoint" {
   description = "RDS database endpoint"
   type        = string
 }
+variable "db_credentials_secret_arn" {
+  description = "ARN of Secrets Manager secret containing DB credentials"
+  type        = string
+}

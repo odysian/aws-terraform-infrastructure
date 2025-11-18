@@ -30,3 +30,4 @@ resource "aws_db_instance" "mysql" {
     create_before_destroy = false
   }
 }
+

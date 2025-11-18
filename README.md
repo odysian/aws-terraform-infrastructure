@@ -4,12 +4,20 @@
 
 This project recreates (and improves) the infrastructure from [aws-cloudwatch-monitoring](https://github.com/odysian/aws-cloudwatch-monitoring) using Terraform.
 
-The goal is to gain a strong understanding and proficiency of using Terraform.
+My goals:
+
+- Gain strong, practical proficiency with Terraform
+- Implement more production-style patterns
+
+High-level features:
 
 - 3-tier web app (ALB → EC2 → RDS MySQL)
 - Auto Scaling Group and scaling policies
 - CloudWatch monitoring and alarms
-- Remote state and basic production-style patterns
+- S3 remote state with DynamoDB locking
+- AWS Secrets Manager for application DB credentials
+- IMDSv2 required on EC2 instances
+
 
 This repo represents Week 3 of my CloudOps learning and builds directly on:
 
@@ -27,11 +35,18 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
 - Auto scaling policies (CPU-based scale up/down)
 - S3 backend + DynamoDB for remote state and locking
 - Modules: Split resources into `networking`, `compute`, `database`, and `monitoring` Terraform modules
-- Multi-environment: Dev/prod directories with seperate backends
+- Multi-environment: Dev/prod directories with separate backends
+- Secrets Management: 
+  - DB credentials stored in AWS Secrets Manager
+  - Secret created outside Terraform and injected via ARN
+  - EC2 instances retrieve credentials at boot with IAM role and `GetSecretValue`
+- IMDSv2 Instance Metadata: 
+  - Launch Template requires IMDSv2 
+  - Application uses IMDSv2 to read instance metadata
 
 **In Progress:**
 
-- Production Examples: Add WAF, read replica configs, IMDSv2
+- Production Examples: Add WAF, read replica configs
 - Polish documentation and add diagrams
 
 ## Architecture
@@ -50,7 +65,7 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
   - Launch Template with Amazon Linux 2023 AMI
   - User data bootstraps Apache + PHP and deploys a simple PHP app
   - Auto Scaling Group across public subnets
-  - Application Load Balancer with health checks on `/health.html
+  - Application Load Balancer with health checks on `/health.html`
 
 - **Database**
   - RDS MySQL 8.0 (`db.t3.micro`)
@@ -97,7 +112,7 @@ The single root module was refactored into four modules:
   - DB subnet group (private subnets)
   - RDS MySQL instance
   - Outputs:
-    - `db_endpoint`, `db_address`, `db_identifier`
+    - `db_endpoint`, `db_host`, `db_identifier`, `db_name`
 
 - **`modules/monitoring`**
   - SNS topic + email subscription
@@ -109,22 +124,42 @@ The root `main.tf` just wires the modules together and passes outputs around.
 
 ## User Data & App Behavior
 
-The web app is a single PHP page deployed by user data:
+The web app is a single PHP page deployed by user data. Current flow:
 
-- Reads instance metadata (ID, AZ, private IP, server time)
-- Connects to RDS using DB credentials embedded by Terraform:
-  - `db_host` = RDS endpoint
-  - `db_name`, `db_user`, `db_pass` from variables
-- User data is rendered inside the compute module using `templatefile`:
+1. Bootstrap stack (user data)
+2. Discover region with IMDSv2
+3. Fetch DB credentials from Secrets Manager
+4. Write `config.php` with DB constants
+5. Write `index.php`:
+  - Implements IMDSv2 for instance metadata calls
+  - Displays Instance ID, AZ, IP, server time
+  - Connects to MySQL and displays connection status
+6. Write `health.html` with a simple OK
+7. Installs cloudwatch agent
+
+### Secrets Management (AWS Secrets Manager)
+
+The project uses AWS Secrets Manager to store and expose database credentials to the web tier.
+1. A Secrets Manager secret is created outside Terraform (CLI or console) with JSON like:
+```json
+{ "username": "...", "password": "...", "dbname": "..." }
+```
+2. The secret ARN is passed into Terraform as a root variable and then forwarded into the compute module.
+3. An inline policy is added to the EC2 IAM role allowing it access to the secret.
+4. User data calls `aws secretsmanager get-secret-value`, parses the JSON and writes config.php with `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`.
+5. `index.php` includes `config.php` and uses those constants to connect to the database.
 
 ```hcl
-user_data = base64encode(templatefile("${path.root}/scripts/user_data.sh", {
-  db_host = var.db_endpoint
-  db_name = var.db_name
-  db_user = var.db_username
-  db_pass = var.db_password
+user_data = base64encode(templatefile("${path.module}/../../scripts/user_data_v2.sh", {
+  db_host       = var.db_host
+  db_secret_arn = var.db_credentials_secret_arn
 }))
+
 ```
+
+- Only non-sensitive values are passed from terraform into user data
+- The actual credentials are pulled at runtime from Secrets Manager
+
 ## Key Learnings
 
 ### Terraform Concepts
@@ -139,7 +174,7 @@ user_data = base64encode(templatefile("${path.root}/scripts/user_data.sh", {
         - Expose RDS identifiers/endpoints for other modules
         - Use user_data from within a module -> Changed \${path.module} to \${path.root}
 - **Dependencies:**
-    - Gained better understanding of how modules rely on eachother
+    - Gained better understanding of how modules rely on each other
         - Compute depends on Database only through its variables
         - Monitoring depends on the other modules outputs
 
@@ -227,6 +262,7 @@ aws-terraform-infrastructure/
 │       ├── variables.tf
 │       └── outputs.tf
 ├── scripts/
+│   ├── user_data_v2.sh     # Updated with IMDSv2 and Secrets Manager
 │   └── user_data.sh        # EC2 bootstrap / PHP app deployment
 └── docs/
     ├── TESTING.md          # Auto scaling and connectivity test plans/results

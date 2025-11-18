@@ -96,3 +96,7 @@ variable "rds_storage_threshold" {
   type        = number
   default     = 2147483648 # 2GB
 }
+variable "db_credentials_secret_arn" {
+  description = "ARN of the secret containing DB credentials"
+  type        = string
+}
