@@ -22,8 +22,13 @@ variable "asg_desired_capacity" {
   description = "Desired number of instances in ASG"
   type        = number
 }
-variable "web_security_group_id" {
-  type = string
+variable "alb_security_group_id" {
+  description = "Security Group ID for the ALB"
+  type        = string
+}
+variable "web_instance_security_group_id" {
+  description = "Security Group ID for web instances"
+  type        = string
 }
 variable "public_subnet_ids" {
   type = list(string)

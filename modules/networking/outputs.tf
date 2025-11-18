@@ -10,9 +10,13 @@ output "private_subnet_ids" {
   description = "IDs of private subnets"
   value       = aws_subnet.private[*].id
 }
-output "web_security_group_id" {
-  description = "ID of web security group"
-  value       = aws_security_group.web.id
+output "alb_security_group_id" {
+  description = "ID of ALB security group"
+  value       = aws_security_group.alb.id
+}
+output "web_instance_security_group_id" {
+  description = "ID of web instance security group"
+  value       = aws_security_group.web_instance.id
 }
 output "database_security_group_id" {
   description = "ID of DB security group"

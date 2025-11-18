@@ -13,11 +13,6 @@ output "private_subnet_ids" {
   value       = module.networking.private_subnet_ids
 }
 
-output "web_security_group_id" {
-  description = "ID of web security group"
-  value       = module.networking.web_security_group_id
-}
-
 output "database_security_group_id" {
   description = "ID of database security group"
   value       = module.networking.database_security_group_id

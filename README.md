@@ -58,7 +58,8 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
   - 2 private subnets (RDS)
   - Internet Gateway + public route table
   - Security groups:
-    - Web SG: 80/443 from Internet
+    - ALB SG: 80/443 from Internet
+    - Web Instance SG: 80 from ALB SG only
     - DB SG: 3306 from Web SG only
 
 - **Compute**
@@ -185,6 +186,10 @@ user_data = base64encode(templatefile("${path.module}/../../scripts/user_data_v2
     - Gained better understanding of how modules rely on each other
         - Compute depends on Database only through its variables
         - Monitoring depends on the other modules outputs
+- **Security hardening (networking):**
+  - Split ALB and EC2 security groups and restricted web instance traffic to only come from the ALB SG
+  - DB SG only allows MySQL from the web instance SG
+
 
 ### Multi-Environment Setup (dev / prod)
 

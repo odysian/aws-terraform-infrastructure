@@ -20,7 +20,7 @@ resource "aws_launch_template" "web" {
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
 
-  vpc_security_group_ids = [var.web_security_group_id]
+  vpc_security_group_ids = [var.web_instance_security_group_id]
 
   metadata_options {
     http_tokens                 = "required" # IMDSv2 only
@@ -53,22 +53,39 @@ resource "aws_launch_template" "web" {
   }
 }
 
-# IAM role for EC2 instances (for SSM and CloudWatch)
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRole",
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "ec2_secrets" {
+  statement {
+    effect = "Allow"
+
+    actions = [
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      var.db_credentials_secret_arn,
+    ]
+  }
+}
+
 resource "aws_iam_role" "ec2_role" {
   name = "${var.project_name}-ec2-role"
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
 
   tags = {
     Name = "${var.project_name}-ec2-role"
@@ -90,18 +107,7 @@ resource "aws_iam_role_policy" "ec2_secretsmanager_policy" {
   name = "${var.project_name}-ec2-secretsmanager"
   role = aws_iam_role.ec2_role.id
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = var.db_credentials_secret_arn
-      }
-    ]
-  })
+  policy = data.aws_iam_policy_document.ec2_secrets.json
 }
 
 # Instance profile to attach role to EC2
@@ -115,7 +121,7 @@ resource "aws_lb" "main" {
   name               = "${var.project_name}-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [var.web_security_group_id]
+  security_groups    = [var.alb_security_group_id]
   subnets            = var.public_subnet_ids
 
   enable_deletion_protection = false

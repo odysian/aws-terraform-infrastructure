@@ -68,10 +68,10 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Security Group for Web Tier (ALB and EC2)
-resource "aws_security_group" "web" {
-  name        = "${var.project_name}-web-sg"
-  description = "Security group for web tier"
+# Security Group for ALB
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-alb-sg"
+  description = "ALB Security group (HTTP from Internet)"
   vpc_id      = aws_vpc.main.id
 
   # HTTP from anywhere
@@ -82,16 +82,6 @@ resource "aws_security_group" "web" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  # HTTPS from anywhere
-  ingress {
-    description = "HTTPS from Internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   # All outbound traffic
   egress {
     description = "All outbound traffic"
@@ -103,6 +93,29 @@ resource "aws_security_group" "web" {
 
   tags = {
     Name = "${var.project_name}-web-sg"
+  }
+}
+
+# Security Group for EC2
+resource "aws_security_group" "web_instance" {
+  name        = "${var.project_name}-web-instance-sg"
+  description = "Web instances behind ALB"
+  vpc_id      = aws_vpc.main.id
+
+  # HTTP from ALB only
+  ingress {
+    description     = "HTTP from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+  # All outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -118,7 +131,7 @@ resource "aws_security_group" "database" {
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    security_groups = [aws_security_group.web.id]
+    security_groups = [aws_security_group.web_instance.id]
   }
 
   # All outbound traffic
