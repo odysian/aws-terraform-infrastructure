@@ -72,6 +72,14 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
   - Private subnet group across 2 AZs
   - Not publicly accessible
   - Web tier connects over port 3306 via DB SG
+  - Storage encrypted at rest with KMS key
+  - Automated backups retained for 1 day (free-tier)
+  - Defined backup and maintenance windows
+  - Deletion protection enabled
+  - Custom parameter group
+  - RDS error/general/slowquery logs exported to CloudWatch Logs
+ 
+
 
 - **Monitoring**
   - CloudWatch Dashboard:
@@ -208,6 +216,18 @@ Both environments were initialized and migrated successfully using:
 ```bash
 terraform init -migrate-state
 ```
+
+### RDS Hardening
+
+- Created a custom parameter group:
+  - Enabled slow query logging (`slow_query_log = 1`)
+  - Reduced `long_query_time` to 2 seconds 
+- Enabled export of `error`, `general`, and `slowquery` logs to CloudWatch Logs for troubleshooting
+- Turned on:
+  - Storage encryption at rest
+  - Deletion protection
+  - Automated backups
+  - Explicit backup and maintenance windows
 
 ### Troubleshooting and Incident Debugging
 
