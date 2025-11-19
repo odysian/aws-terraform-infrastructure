@@ -31,6 +31,11 @@ This document summarizes the main security controls in this Terraform-based envi
   - Inbound: MySQL 3306 from Web Instance SG only
   - No inbound from ALB, internet, or arbitrary CIDR
 
+**WAF / Edge Protection**
+- Web ACL: `REGIONAL` scope attached to the ALB
+- Uses AWSManagedRulesCommonRuleSet, KnownBadInputs, SQLi rule groups
+- Visibility enabled to CloudWatch for metrics / sampled requests
+
 ## Instance Hardening
 
 **Metadata Service**

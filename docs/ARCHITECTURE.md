@@ -63,6 +63,7 @@ High-level request flow:
   - HTTP :80 listener that redirects all traffic to HTTPS
   - HTTPS :443 listener that terminates TLS using an ACM certificate for lab.odysian.dev
 - ALB then forwards plain HTTP traffic on port 80 to the web instances in the target group
+- ALB is protected by an AWS WAF v2 Web ACL using AWS managed rule groups for baseline protection
 
 For TLS policy details and certificate configuration, see [SECURITY.md](SECURITY.md).
 

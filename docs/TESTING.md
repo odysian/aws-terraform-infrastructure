@@ -101,6 +101,56 @@ In CloudWatch Logs (`/aws/rds/instance/terraform-webapp-dev-database/slowquery`)
 # Time: 2025-11-18T04:04:50.953323Z # User@Host: admin[admin] @ [10.0.2.86] Id: 14 # Query_time: 3.000274 Lock_time: 0.000000 Rows_sent: 1 Rows_examined: 1 SET timestamp=1763438687; SELECT SLEEP(3);
 ```
 
+## WAF / Edge Protection
+
+### SQL injection-style payload blocked
+
+**Goal:** Confirm the AWS managed SQL injection rules are active and inspecting traffic on `lab.odysian.dev`.
+
+**Test:**
+
+From a terminal:
+```bash
+curl -k "https://lab.odysian.dev/?user=admin'%20OR%201=1--"
+```
+**Expected:**
+- Response returns an HTTP 403 Forbidden status from the ALB
+- Request does not reach the application
+
+**Console verification:**
+- WAF & Shield -> Web ACLs -> terraform-webapp-dev-web-acl
+- View dashboard, logs, and sampled requests tab
+- Bottom of the console is a sampled requests table
+- Filter on Action = BLOCK
+- Confirm:
+  - Request URI matches SQLi query string
+  - Source IP matches client used for testing
+  - Matched rule is `AWS#AWSManagedRulesSQLiRuleSet#SQLi_QUERYARGUMENTS`
+
+![Web Application Firewall Test](images/WAF-Test.png)
+
+### Known bad input blocked
+
+**Goal:** Confirm the common rules set group is active.
+
+**Test:**
+
+From a terminal:
+```bash
+curl "https://lab.odysian.dev/?q=<script>alert(1)</script>" -v
+```
+
+**Expected:**
+- Response is blocked (HTTP 403 / non-200)
+- Request does not reach the app
+
+**Console verification:**
+
+- Rules tab → select terraform-webapp-dev_waf_common → View sampled requests
+- Filter on Blocked requests and confirm the payload and source IP appear as expected
+
+![Web Application Firewall Test 2](images/WAF-Test2.png)
+
 ## Troubleshooting Notes
 
 - **Misconfigured RDS security group after initial modularization**

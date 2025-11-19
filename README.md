@@ -2,9 +2,9 @@
 
 ## Overview
 
-Terraform-based rebuild of my Week 1 CloudWatch monitoring project, with a focus on more production-style patterns and CloudOps workflows.
+Terraform-based rebuild of my Week 1 CloudWatch monitoring project, with a focus on more production-style patterns and operations workflows.
 
-This repo represents Week 3 of my CloudOps learning and builds directly on:
+This repo represents Week 3 of my Cloud Operations learning and builds directly on:
 
 - Week 1 – Manual build: [AWS CloudWatch Monitoring](https://github.com/odysian/aws-cloudwatch-monitoring)  
 - Week 2 – Break/fix: [AWS Incident Response Lab](https://github.com/odysian/aws-incident-response-lab) 
@@ -20,12 +20,13 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
 - 3-tier web app (ALB → EC2 → RDS MySQL)
 - Auto Scaling Group with CPU-based scale up/down
 - CloudWatch dashboard and alarms for ALB / EC2 / RDS
-- HTTPS entrypoint on `lab.odysian.dev` (TLS terminated at ALB with ACM, HTTP → HTTPS redirect)
 - S3 remote state with DynamoDB locking
 - AWS Secrets Manager for application DB credentials
 - IMDSv2 enforced on EC2 instances
 - Basic RDS hardening (encryption, backups, custom parameter group, logs to CloudWatch)
 - Separate `dev` and `prod` environments with isolated backends
+- HTTPS entrypoint on `lab.odysian.dev` (TLS terminated at ALB with ACM, HTTP → HTTPS redirect)
+- AWS WAF v2 Web ACL attached to the ALB using AWS managed rule groups
 
 For detailed architecture, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 For security details (IAM, TLS policy, Secrets Manager), see [docs/SECURITY.md](docs/SECURITY.md).

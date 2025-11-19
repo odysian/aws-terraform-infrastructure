@@ -56,3 +56,9 @@ module "monitoring" {
   lb_arn_suffix              = module.compute.lb_arn_suffix
   lb_tg_arn_suffix           = module.compute.lb_tg_arn_suffix
 }
+
+module "waf" {
+  source       = "../../modules/waf"
+  project_name = var.project_name
+  alb_arn      = module.compute.alb_arn
+}
