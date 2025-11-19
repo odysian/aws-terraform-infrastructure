@@ -178,6 +178,15 @@ User data script (`scripts/user_data_v2.sh`) is responsible for:
 - SNS topic used as alarm action target
 - Email subscription receives alarm notifications
 
+### ALB Access Logging
+
+- The Application Load Balancer is configured to write access logs to a dedicated S3 bucket
+- Bucket name pattern: `${project_name}-alb-logs-terraform-odys`
+- Logs are stored in a single, regional bucket for this environment
+- Access logging is enabled via the `access_logs` block on the ALB:
+  - `bucket = aws_s3_bucket.alb_logs.bucket`
+  - optional prefix for grouping ALB logs
+
 ## Terraform Architecture
 
 The Terraform layout is intentionally modular and environment-aware

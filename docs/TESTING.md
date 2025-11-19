@@ -42,6 +42,17 @@ for i in {1..10}; do   curl -s http://terraform-webapp-dev-alb-1107457006.us-eas
 
 Confirmed health.html returns OK and load is spread between instances across loop iterations
 
+### Note on viewing ALB log files (Windows)
+
+- ALB access logs are stored as gzip-compressed files in the S3 log bucket.
+- On Linux, you can view them directly with tools like:
+
+```bash
+gunzip -c 631353662337_elasticloadbalancing_...log.gz | head
+```
+
+- Windows extract all option doesn't handle .gz properly, install 7zip instead.
+
 ### CloudWatch Alarms
 
 Verified alarm states by inducing conditions:

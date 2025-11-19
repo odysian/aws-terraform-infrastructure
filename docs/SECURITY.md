@@ -143,6 +143,13 @@ The project uses AWS Secrets Manager to store and expose database credentials to
 - Add AWS Config rules or Security Hub / GuardDuty for continuous checks
 - Add dashboards focused on security signals (e.g., failed connections, spikes in 5xx/4xx)
 
+**ALB Log Storage**
+
+- ALB access logs are written to a dedicated S3 bucket with encryption and versioning enabled
+- Logs have 30-day lifecycle rule
+- Public access fully blocked via `aws_s3_bucket_public_access_block`
+- Bucket policy: Grants `s3:GetBucketAcl` and `s3:PutObject` only to the ELB service account
+
 ## Terraform State Security
 
 **Backend**
