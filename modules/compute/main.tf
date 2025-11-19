@@ -153,11 +153,34 @@ resource "aws_lb_target_group" "web" {
   }
 }
 
-# ALB Listener
+# HTTP listener: redirect everything to HTTPS
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# HTTPS listener: terminate TLS with ACM cert and forward to TG
+# ssl_policy name comes from the AWS Console:
+# EC2 → Load Balancers → <your ALB> → Listeners → HTTPS:443 → Security policy dropdown.
+# Pick a modern "recommended" policy there and copy its exact name into ssl_policy.
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  certificate_arn = var.acm_certificate_arn
 
   default_action {
     type             = "forward"

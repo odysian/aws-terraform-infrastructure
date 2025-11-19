@@ -19,8 +19,10 @@ The application follows a 3-tier pattern:
 
 High-level request flow:
 
-1. Client sends HTTP request to ALB (public endpoint)
-2. ALB forwards request to healthy EC2 instances in the target group
+1. Client sends HTTP(S) request to the ALB at `lab.odysian.dev` (public endpoint)
+2. ALB:
+   - Redirects HTTP :80 traffic to HTTPS :443
+   - Terminates TLS on HTTPS :443 and forwards the request to healthy EC2 instances in the target grou
 3. EC2 instance:
    - Reads configuration written by user data (`config.php`)
    - Uses DB credentials from Secrets Manager
@@ -53,6 +55,29 @@ High-level request flow:
 - **DB SG**
   - Inbound: MySQL 3306 from the web instance SG only
   - No inbound from ALB or public CIDRs
+
+### HTTPS / Entry Point
+
+- Public entry point: https://lab.odysian.dev
+- Application Load Balancer exposes:
+  - HTTP :80 listener that redirects all traffic to HTTPS
+  - HTTPS :443 listener that terminates TLS using an ACM certificate for lab.odysian.dev
+- ALB then forwards plain HTTP traffic on port 80 to the web instances in the target group
+
+For TLS policy details and certificate configuration, see [SECURITY.md](SECURITY.md).
+
+#### TLS termination flow
+
+1. Client connects to `http://lab.odysian.dev` on port 80  
+   - The ALB HTTP listener returns an HTTP 301 redirect to `https://lab.odysian.dev/...`
+
+2. Client follows the redirect and connects to `https://lab.odysian.dev` on port 443  
+   - The ALB presents the ACM certificate for `lab.odysian.dev`  
+   - The browser and ALB complete the TLS handshake using the configured AWS-managed security policy
+
+3. After TLS is established, the ALB terminates TLS and forwards the request to the target group over HTTP on port 80  
+   - Traffic between the client and ALB is HTTPS (encrypted)  
+   - Traffic between the ALB and EC2 instances is HTTP inside the VPC
 
 ## Compute Layer
 
@@ -89,7 +114,9 @@ User data script (`scripts/user_data_v2.sh`) is responsible for:
 **Load Balancer**
 
 - Application Load Balancer (ALB) in public subnets
-- HTTP listener on port 80
+- Listeners:
+  - HTTP :80 - redirects all requests to HTTPS
+  - HTTPS :443 - terminates TLS using the ACM certificate for `lab.odysian.dev` and forwards to the target group on port 80
 - Target group:
   - Protocol HTTP, port 80
   - Health check path `/health.html`

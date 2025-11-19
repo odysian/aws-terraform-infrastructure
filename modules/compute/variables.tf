@@ -58,3 +58,7 @@ variable "db_credentials_secret_arn" {
   description = "ARN of Secrets Manager secret containing DB credentials"
   type        = string
 }
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for the HTTPS listener"
+  type        = string
+}

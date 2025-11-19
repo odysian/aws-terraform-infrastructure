@@ -27,6 +27,7 @@ module "compute" {
   db_password                    = var.db_password
   db_endpoint                    = module.database.db_endpoint
   db_credentials_secret_arn      = var.db_credentials_secret_arn
+  acm_certificate_arn            = var.acm_certificate_arn
 }
 
 module "database" {

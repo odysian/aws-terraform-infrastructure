@@ -100,3 +100,7 @@ variable "db_credentials_secret_arn" {
   description = "ARN of the secret containing DB credentials"
   type        = string
 }
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for lab.odysian.dev"
+  type        = string
+}

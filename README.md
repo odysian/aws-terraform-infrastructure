@@ -20,13 +20,15 @@ This repo represents Week 3 of my CloudOps learning and builds directly on:
 - 3-tier web app (ALB → EC2 → RDS MySQL)
 - Auto Scaling Group with CPU-based scale up/down
 - CloudWatch dashboard and alarms for ALB / EC2 / RDS
+- HTTPS entrypoint on `lab.odysian.dev` (TLS terminated at ALB with ACM, HTTP → HTTPS redirect)
 - S3 remote state with DynamoDB locking
 - AWS Secrets Manager for application DB credentials
 - IMDSv2 enforced on EC2 instances
-- Basic RDS hardening (encryption, backups, custome parameter group, logs to CloudWatch)
+- Basic RDS hardening (encryption, backups, custom parameter group, logs to CloudWatch)
 - Separate `dev` and `prod` environments with isolated backends
 
 For detailed architecture, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+For security details (IAM, TLS policy, Secrets Manager), see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Secrets Management
 
@@ -172,5 +174,5 @@ The web app is a single PHP page deployed by user data. Current flow:
 
 - [AWS CloudWatch Monitoring](https://github.com/odysian/aws-cloudwatch-monitoring) - Manual infrastructure build (Week 1)
 - [AWS Incident Response Lab](https://github.com/odysian/aws-incident-response-lab) - Troubleshooting scenarios (Week 2)
-- **AWS Terraform Infrastructure** - Terraform based rebuild (Week 3)s
+- **AWS Terraform Infrastructure** - Terraform based rebuild (Week 3)
 

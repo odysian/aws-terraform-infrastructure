@@ -21,7 +21,7 @@ This document summarizes the main security controls in this Terraform-based envi
 
 **Security Groups**
 - **ALB SG**
-  - Inbound: HTTP 80 from the internet
+  - Inbound: HTTP 80 and HTTPS 443 from the internet
   - Outbound: HTTP/HTTPS to web instances
 - **Web Instance SG**
   - Inbound: HTTP 80 from ALB SG only
@@ -56,6 +56,21 @@ This document summarizes the main security controls in this Terraform-based envi
     - `Action: secretsmanager:GetSecretValue`
     - `Resource: <db-credentials-secret-arn>`
 - Least privilege for the EC2 role (scoped to a single secret)
+
+## HTTPS / TLS Configuration
+
+TLS is terminated at the ALB: traffic between clients and the ALB is HTTPS, and traffic between the ALB and EC2 instances is HTTP inside the VPC.
+
+- The Application Load Balancer terminates TLS on port 443 using an ACM certificate issued for lab.odysian.dev
+- The HTTPS listener uses an AWS-managed security policy:
+```
+ELBSecurityPolicy-TLS13-1-2-2021-06
+```
+
+- This policy was selected in the AWS Console under:
+`EC2 → Load Balancers → <ALB> → Listeners → HTTPS : 443 → Security policy`
+- The Terraform configuration then references that same policy by name via the `ssl_policy` attribute on `aws_lb_listener.https`
+- Using an AWS-managed policy keeps cipher suites and protocol versions aligned with AWS recommendations, instead of managing individual ciphers by hand
 
 ## Secrets Management (AWS Secrets Manager)
 
@@ -139,10 +154,8 @@ The project uses AWS Secrets Manager to store and expose database credentials to
 
 The following are intentionally out-of-scope for this iteration but are natural next steps:
 
-- **HTTPS Everywhere**
-  - Attach ACM certificate to ALB and redirect HTTP → HTTPS
 - **Edge Protection**
-  - Add AWS WAF in front of the ALB for basic OWASP protections and rate limiting
+  - Add AWS WAF in front of the ALB
 - **Stronger Egress Controls**
   - Restrict outbound traffic from web instances and database to only required endpoints
 - **Patch & Compliance**
