@@ -16,19 +16,22 @@ module "networking" {
 module "compute" {
   source = "../../modules/compute"
 
-  project_name          = var.project_name
-  instance_type         = var.instance_type
-  asg_min_size          = var.asg_min_size
-  asg_max_size          = var.asg_max_size
-  asg_desired_capacity  = var.asg_desired_capacity
-  public_subnet_ids     = module.networking.public_subnet_ids
-  web_security_group_id = module.networking.web_security_group_id
-  vpc_id                = module.networking.vpc_id
-  db_host               = module.database.db_host
-  db_name               = var.db_name
-  db_username           = var.db_username
-  db_password           = var.db_password
-  db_endpoint           = module.database.db_endpoint
+  project_name                   = var.project_name
+  instance_type                  = var.instance_type
+  asg_min_size                   = var.asg_min_size
+  asg_max_size                   = var.asg_max_size
+  asg_desired_capacity           = var.asg_desired_capacity
+  public_subnet_ids              = module.networking.public_subnet_ids
+  alb_security_group_id          = module.networking.alb_security_group_id
+  web_instance_security_group_id = module.networking.web_instance_security_group_id
+  vpc_id                         = module.networking.vpc_id
+  db_host                        = module.database.db_host
+  db_name                        = var.db_name
+  db_username                    = var.db_username
+  db_password                    = var.db_password
+  db_endpoint                    = module.database.db_endpoint
+  db_credentials_secret_arn      = var.db_credentials_secret_arn
+  acm_certificate_arn            = var.acm_certificate_arn
 }
 
 module "database" {
@@ -56,4 +59,10 @@ module "monitoring" {
   autoscaling_group_name     = module.compute.autoscaling_group_name
   lb_arn_suffix              = module.compute.lb_arn_suffix
   lb_tg_arn_suffix           = module.compute.lb_tg_arn_suffix
+}
+
+module "waf" {
+  source       = "../../modules/waf"
+  project_name = var.project_name
+  alb_arn      = module.compute.alb_arn
 }
