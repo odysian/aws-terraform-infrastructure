@@ -43,7 +43,7 @@ module "database" {
   project_name               = var.project_name
   database_security_group_id = module.networking.database_security_group_id
   private_subnet_ids         = module.networking.private_subnet_ids
-
+  enable_deletion_protection = var.enable_deletion_protection
 }
 
 module "monitoring" {

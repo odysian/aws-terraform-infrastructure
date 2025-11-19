@@ -169,3 +169,21 @@ curl "https://lab.odysian.dev/?q=<script>alert(1)</script>" -v
   - Root cause: RDS using the web SG instead of the DB SG
   - Fix: Corrected DB SG output in networking module and re-applied
   - Result: Application came up cleanly and DB connection succeeded
+
+- **SSM / Session Manager connectivity regression**
+  - Symptom: New EC2 instances stopped appearing as managed nodes in Systems Manager (Session Manager showed "SSM Agent is not online"), even though IAM and networking were unchanged.
+  - Investigation:
+    - Launch Template was using the latest Amazon Linux 2023 AMI via `most_recent = true`.
+    - CloudTrail showed the AMI ID for new instances changed sometime after 22:49 UTC on Nov 17.
+    - Launching a test instance from the newer AMI confirmed that `amazon-ssm-agent` was not installed/running by default.
+  - Root cause: The data source `data "aws_ami" "amazon_linux_2023"` silently moved the environment to a newer AL2023 image that no longer had the SSM Agent preinstalled, so instances came up without a running agent.
+  - Fix:
+    - Updated user data to explicitly install and start the SSM Agent on boot:
+      ```bash
+      dnf install -y amazon-ssm-agent || true
+      systemctl enable amazon-ssm-agent
+      systemctl restart amazon-ssm-agent || systemctl start amazon-ssm-agent
+      ```
+    - Verified instances showed as `Online` in Systems Manager Fleet Manager and were reachable via Session Manager.
+  - Lesson learned: Do not rely on AMI defaults for critical agents. Either pin a specific AMI ID and roll it forward on purpose, or treat bootstrap scripts as the source of truth for installing/running tools like SSM and CloudWatch Agent.
+ 

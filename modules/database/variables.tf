@@ -24,5 +24,9 @@ variable "database_security_group_id" {
   description = "DB Security group id"
   type        = string
 }
-
+variable "enable_deletion_protection" {
+  description = "Deletion Protection for RDS instance"
+  type        = bool
+  default     = true
+}
 

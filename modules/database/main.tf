@@ -59,7 +59,7 @@ resource "aws_db_instance" "mysql" {
   maintenance_window         = "sun:07:00-sun:08:00"
   auto_minor_version_upgrade = true
   copy_tags_to_snapshot      = true
-  deletion_protection        = true
+  deletion_protection        = var.enable_deletion_protection
   storage_encrypted          = true
 
   parameter_group_name = aws_db_parameter_group.mysql.name

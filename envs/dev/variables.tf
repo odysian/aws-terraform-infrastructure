@@ -104,3 +104,8 @@ variable "acm_certificate_arn" {
   description = "ACM certificate ARN for lab.odysian.dev"
   type        = string
 }
+variable "enable_deletion_protection" {
+  description = "Deletion Protection for RDS instance"
+  type        = bool
+  default     = true
+}

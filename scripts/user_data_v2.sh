@@ -23,6 +23,14 @@ echo "DB_SECRET_ARN from Terraform: $DB_SECRET_ARN"
 dnf update -y
 dnf install -y httpd php php-mysqlnd php-cli php-common php-fpm wget mariadb105 jq awscli
 
+# ----------------------------------------------------------------------
+# Ensure SSM Agent is installed and running
+# ----------------------------------------------------------------------
+echo "Ensuring SSM Agent is installed and running..."
+dnf install -y amazon-ssm-agent || true
+systemctl enable amazon-ssm-agent
+systemctl restart amazon-ssm-agent || systemctl start amazon-ssm-agent
+
 systemctl enable httpd
 systemctl start httpd
 
