@@ -162,6 +162,16 @@ curl "https://lab.odysian.dev/?q=<script>alert(1)</script>" -v
 
 ![Web Application Firewall Test 2](images/WAF-Test2.png)
 
+## Security Baseline Checks
+
+### CloudTrail
+
+1. Go to **CloudTrail → Trails** in the AWS console.
+2. Verify a trail named `account-trail-<project_name>` exists and is:
+   - Using the `cloudtrail-logs-<project_name>-<account-id>` S3 bucket
+3. In the S3 console, open the `cloudtrail-logs-<project_name>-<account-id>` bucket and confirm:
+   - Recent log files exist under `AWSLogs/<account-id>/CloudTrail/...` 
+
 ## Troubleshooting Notes
 
 - **Misconfigured RDS security group after initial modularization**

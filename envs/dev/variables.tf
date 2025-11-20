@@ -109,3 +109,8 @@ variable "enable_deletion_protection" {
   type        = bool
   default     = true
 }
+variable "enable_guardduty" {
+  description = "Enable Guardduty in this account/region"
+  type        = bool
+  default     = false
+}

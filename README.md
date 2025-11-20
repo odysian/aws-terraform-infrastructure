@@ -27,6 +27,8 @@ This repo represents Week 3 of my Cloud Operations learning and builds directly 
 - Separate `dev` and `prod` environments with isolated backends
 - HTTPS entrypoint on `lab.odysian.dev` (TLS terminated at ALB with ACM, HTTP → HTTPS redirect)
 - AWS WAF v2 Web ACL attached to the ALB using AWS managed rule groups
+- CloudTrail Trail sending logs to S3 bucket
+- GuardDuty (toggled off due to free tier)
 
 For detailed architecture, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 For security details (IAM, TLS policy, Secrets Manager), see [docs/SECURITY.md](docs/SECURITY.md).

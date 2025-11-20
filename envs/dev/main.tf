@@ -66,3 +66,8 @@ module "waf" {
   project_name = var.project_name
   alb_arn      = module.compute.alb_arn
 }
+
+module "security" {
+  source       = "../../modules/security"
+  project_name = var.project_name
+}

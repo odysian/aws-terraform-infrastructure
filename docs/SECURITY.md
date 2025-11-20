@@ -77,6 +77,22 @@ ELBSecurityPolicy-TLS13-1-2-2021-06
 - The Terraform configuration then references that same policy by name via the `ssl_policy` attribute on `aws_lb_listener.https`
 - Using an AWS-managed policy keeps cipher suites and protocol versions aligned with AWS recommendations, instead of managing individual ciphers by hand
 
+## Database Access / App User
+
+- The RDS instance is created via Terraform with a master database user (the RDS admin user).
+- The web application does not use the RDS master user. Instead, it connects using a separate, least-privilege application user that has only:
+  - SELECT, INSERT, UPDATE, and DELETE permissions on the application database schema.
+
+- Application DB credentials (username, password, dbname) are stored in AWS Secrets Manager. Terraform never sees the plaintext credentials; it only receives the secret ARN as an input variable.
+- On instance boot, user_data_v2.sh:
+  - Retrieves the secret from AWS Secrets Manager using the injected ARN.
+  - Parses the JSON payload.
+  - Writes a config.php file that the PHP application uses to connect to the database.
+
+- This design ensures:
+  - The running application uses a least-privilege DB identity.
+  - The RDS master user is reserved for administrative tasks via SSM and is not used by the web app.
+
 ## Secrets Management (AWS Secrets Manager)
 
 The project uses AWS Secrets Manager to store and expose database credentials to the web tier.
@@ -162,12 +178,26 @@ The project uses AWS Secrets Manager to store and expose database credentials to
   - Terraform IAM identity
   - CI user/role
 
+## Account Security Baseline
+
+Included account-level security via the `security` module.
+
+- **CloudTrail**
+  - A multi-region AWS CloudTrail trail (`account-trail-terraform-webapp-env`) is enabled for the account
+  - The trail delivers logs to an encrypted S3 bucket
+  - There is no Public access to the CloudTrail log bucket, and the bucket policy only allows CloudTrail to:
+    - Read the bucket ACL
+    - Write log files
+  - Log file validation is enabled
+
+- **GuardDuty (optional)**
+  - The `security` module supports enabling an AWS GuardDuty detector via the `enable_guardduty` variable
+  - Since my account is free tier, I left GuardDuty disabled
+  
 ## Known Gaps & Future Work
 
 The following are intentionally out-of-scope for this iteration but are natural next steps:
 
-- **Edge Protection**
-  - Add AWS WAF in front of the ALB
 - **Stronger Egress Controls**
   - Restrict outbound traffic from web instances and database to only required endpoints
 - **Patch & Compliance**
