@@ -2,180 +2,156 @@
 
 ## Overview
 
-Terraform-based rebuild of my Week 1 CloudWatch monitoring project, with a focus on more production-style patterns and operations workflows.
+Terraform-based rebuild of my earlier AWS CloudWatch monitoring and incident-response labs. 
 
-This repo represents Week 3 of my Cloud Operations learning and builds directly on:
+It shifts the focus toward production-style patterns: modular design, separate environments, secrets management, hardened security, and automated scaling. 
 
-- Week 1 – Manual build: [AWS CloudWatch Monitoring](https://github.com/odysian/aws-cloudwatch-monitoring)  
-- Week 2 – Break/fix: [AWS Incident Response Lab](https://github.com/odysian/aws-incident-response-lab) 
+My goal is to deepen my operational fluency while learning through hands-on iterative projects.
 
-## Goals:
+This project provisions a full 3-tier web application using Terraform, with production-style operational controls.
 
-- Build practical fluency with Terraform
-- Implement more production-style patterns: modules, remote state, multi-env, hardening
-- Treat this like my other labs: deploy -> observe -> harden -> document
+For detailed architecture, implementation rationale, and operational considerations, see:
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/SECURITY.md`](docs/SECURITY.md)
+- [`docs/TESTING.md`](docs/TESTING.md)
 
-## Features:
+## Key Features:
 
-- 3-tier web app (ALB → EC2 → RDS MySQL)
-- Auto Scaling Group with CPU-based scale up/down
-- CloudWatch dashboard and alarms for ALB / EC2 / RDS
-- S3 remote state with DynamoDB locking
-- AWS Secrets Manager for application DB credentials
-- IMDSv2 enforced on EC2 instances
-- Basic RDS hardening (encryption, backups, custom parameter group, logs to CloudWatch)
-- Separate `dev` and `prod` environments with isolated backends
-- HTTPS entrypoint on `lab.odysian.dev` (TLS terminated at ALB with ACM, HTTP → HTTPS redirect)
-- AWS WAF v2 Web ACL attached to the ALB using AWS managed rule groups
-- CloudTrail Trail sending logs to S3 bucket
-- GuardDuty (toggled off due to free tier)
+### Core Infrastructure
+- VPC with public/private subnets and route tables  
+- Application Load Balancer (HTTPS, TLS, HTTP → HTTPS redirect)
+- Auto Scaling Group with CPU‑based scaling policies 
+- Secrets Manager integration for runtime DB credentials
+- RDS MySQL with encryption, backups, logs to CloudWatch, and custom parameter group
+- IMDSv2 enforced on EC2 instances 
 
-For detailed architecture, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-For security details (IAM, TLS policy, Secrets Manager), see [docs/SECURITY.md](docs/SECURITY.md).
+### Security Enhancements
+- AWS WAF Web ACL attached to the ALB 
+- Security group separation:
+  - ALB SG (ingress from internet → ALB)
+  - Web SG (ingress only from ALB → EC2)
+  - DB SG (ingress only from Web SG → MySQL)
+- TLS termination with ACM on `lab.odysian.dev`
+- Account‑level CloudTrail trail logging to encrypted S3
+- ALB access logging
 
-## Secrets Management
+### Operational Hardening
+- S3 remote state + DynamoDB locking per environment  
+- GitHub Actions CI pipeline enforcing fmt/validate/plan for dev and prod 
+- CloudWatch dashboard + alarms for ALB, EC2, and RDS  
+- CloudWatch Agent installed via user data  
+- ASG updates via Launch Template versioning
+- S3 lifecycle and encryption policies
 
-DB credentials are not stored in Terraform variables.
-- A Secrets Manager secret is created outside Terraform (console or CLI) with JSON like:
+### Application Behavior
+User data performs the following at boot:
+1. Installs httpd, PHP, CloudWatch agent, and required packages  
+2. Retrieves AWS region from IMDSv2  
+3. Fetches DB credentials from Secrets Manager  
+4. Writes `config.php` and an operational `index.php`  
+5. Creates `health.html` for the ALB target group  
+6. Ensures SSM agent is installed and enabled (post‑AMI regression fix)  
 
-```json
-  { "username": "...", "password": "...", "dbname": "..." }
-```
-- The secret ARN is passed into Terraform as a root variable and forwarded into the compute module.
-- EC2 IAM role has a scoped policy allowing secretsmanager:GetSecretValue on that ARN.
-- User data calls `aws secretsmanager get-secret-value`, parses the JSON, writes `config.php`, and `index.php` uses those constants to connect to MySQL.
-
-## Modules
-
-The root module is intentionally thin and just wires the pieces together.
-
-- **`modules/networking`**
-  - VPC, subnets, route tables, IGW
-  - ALB, Web, and DB security groups  
-  - Outputs:
-    - `vpc_id`
-    - `public_subnet_ids`
-    - `private_subnet_ids`
-    - `alb_security_group_id`
-    - `web_security_group_id`
-    - `database_security_group_id`
-
-- **`modules/compute`**
-  - AMI Data source, IAM role/instance profile
-  - Launch Template, ASG, ALB, target group, listener
-  - CPU based scaling policies
-  - Outputs: `autoscaling_group_name`, `asg_scale_up_policy_ARN`, `asg_scale_down_policy_ARN`, `lb_dns_name`, etc.
-
-- **`modules/database`**
-  - DB subnet group
-  - RDS instance + custom parameter group
-  - Outputs: `db_endpoint`, `db_host`, `db_name`, `db_identifier`
-
-- **`modules/monitoring`**
-  - SNS topic + email subscription
-  - CloudWatch dashboard
-  - Alarms for ALB / ASG / RDS
-
-More detail on design decisions and hardening lives in:
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/SECURITY.md](docs/SECURITY.md)
-- [docs/TESTING.md](docs/TESTING.md)
-
-## Environments
-
-This repo uses separate environment directories plus separate backends:
-
-```
-envs/
-├── dev/
-│   ├── backend.tf         # S3 backend: dev.tfstate
-│   ├── main.tf            # Calls the root modules
-│   └── terraform.tfvars   # Dev-specific variables
-└── prod/
-    ├── backend.tf         # S3 backend: prod.tfstate
-    ├── main.tf
-    └── terraform.tfvars
-```
-
-Each environment has:
-- Its own remote state and DynamoDB lock
-- Its own variables
-- Its own RDS instance and ALB/ASG
+This creates a simple dynamic PHP application that displays:
+- EC2 metadata (IMDSv2)  
+- Database connection status  
+- MySQL version and server time
 
 ## Repository Structure
+
 ```
 aws-terraform-infrastructure/
-├── main.tf                 # Root module wiring: calls networking, compute, database, monitoring
-├── providers.tf            # AWS provider config
-├── backend.tf              # S3 + DynamoDB backend config
-├── variables.tf            # Root input variables
-├── .tfvars.example         # Example of quick variable file
-├── outputs.tf              # Root outputs (ALB DNS, RDS endpoint, dashboard URL, etc.)
 ├── modules/
 │   ├── networking/
-│   │   ├── main.tf         # VPC, subnets, route tables, security groups
-│   │   ├── variables.tf
-│   │   └── outputs.tf
 │   ├── compute/
-│   │   ├── main.tf         # AMI data, IAM, Launch Template, ALB, ASG, scaling policies
-│   │   ├── variables.tf
-│   │   └── outputs.tf
 │   ├── database/
-│   │   ├── main.tf         # DB subnet group + RDS instance
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   └── monitoring/
-│       ├── main.tf         # SNS, CloudWatch dashboard + alarms
-│       ├── variables.tf
-│       └── outputs.tf
+│   ├── monitoring/
+│   ├── waf/
+│   └── security/
+├── envs/
+│   ├── dev/
+│   └── prod/
 ├── scripts/
-│   ├── user_data_v2.sh     # Updated with IMDSv2 and Secrets Manager
-│   └── user_data.sh        # EC2 bootstrap / PHP app deployment
+│   ├── user_data_v2.sh
+│   └── user_data.sh
 └── docs/
-    ├── TESTING.md          # Auto scaling and connectivity test plans/results
-    └── images/             # Diagrams and screenshots
+    ├── ARCHITECTURE.md
+    ├── SECURITY.md
+    ├── TESTING.md
+    └── images/
 ```
 
+## Secrets Management (High Level)
 
-## User Data & App Behavior
 
-The web app is a single PHP page deployed by user data. Current flow:
+- Application DB credentials are stored in AWS Secrets Manager and fetched at boot by the EC2 instances via IAM.
+- The app uses a dedicated, least-privilege DB user.
+- Credentials never appear in Terraform state or user data.
+- If RDS is recreated, the app user must be recreated to match the existing secret.
 
-1. Bootstrap stack (user data)
-2. Discover region with IMDSv2
-3. Fetch DB credentials from Secrets Manager
-4. Write `config.php` with DB constants
-5. Write `index.php`:
-  - Implements IMDSv2 for instance metadata calls
-  - Displays Instance ID, AZ, IP, server time
-  - Connects to MySQL and displays connection status
-6. Write `health.html` with a simple OK
-7. Installs cloudwatch agent
+### EC2 Runtime Integration
+
+The launch template injects the secret ARN into user data.  
+User data fetches and parses the secret:
+
+```bash
+aws secretsmanager get-secret-value   --secret-id "$DB_SECRET_ARN"   --query 'SecretString' --output text
+```
+
+This pattern ensures:
+- No credentials in Terraform state  
+- No secrets in user data templates  
+- Runtime‑only credential access  
+
+If the RDS instance is destroyed and recreated, the application user must be recreated so the existing secret remains valid.
+
+## Multi‑Environment Workflow
+
+The repository uses separate environments with isolated states:
+
+```
+envs/dev/  → dev.tfstate
+envs/prod/ → prod.tfstate
+```
+
+Each environment has its own:
+- RDS instance
+- ALB and ASG
+- Secrets Manager ARN
+- Domain configuration
+
+Terraform Cloud is not used: everything is deployed via local CLI and GitHub Actions CI.
 
 ## Key Learnings
 
-### Terraform Concepts
-- **Remote state** 
-    - Migrated from local state to S3 backend with DynamoDB state locking.
-    - Safe for collaboration and avoids drift from local files.
-- **Modules**
-    - Split networking / compute / database / monitoring into dedicated modules.
-    - Root module is used to wire them together.
-    - Learned how to:
-        - Pass variables/outputs between modules
-        - Expose RDS identifiers/endpoints for other modules
-        - Use user_data from within a module -> Changed \${path.module} to \${path.root}
-- **Dependencies:**
-    - Gained better understanding of how modules rely on each other
-        - Compute depends on Database only through its variables
-        - Monitoring depends on the other modules outputs
-- **Security hardening (networking):**
-  - Split ALB and EC2 security groups and restricted web instance traffic to only come from the ALB SG
-  - DB SG only allows MySQL from the web instance SG
+### Terraform
+- Implemented a thin‑root, modular architecture.
+- Gained fluency passing outputs → module inputs across layers.  
+- Adopted S3 + DynamoDB for remote state and locking.  
+- Used Launch Template versioning + create_before_destroy for safe rolling replacements.  
+- Learned to diagnose plan/destroy failures related to:
+  - S3 versioned buckets
+  - RDS deletion protection
 
-## Related Projects
+### AWS Operations
+- Debugged RDS connectivity issues caused by incorrect SG wiring after modularization.  
+- Understood CPU bursting and scaling behavior on t3.micro instances.  
+- Identified root cause when SSM agent became unavailable due to a new AMI without SSM preinstalled.  
+- Implemented an explicit SSM agent install in user data to avoid AMI regressions. 
 
-- [AWS CloudWatch Monitoring](https://github.com/odysian/aws-cloudwatch-monitoring) - Manual infrastructure build (Week 1)
-- [AWS Incident Response Lab](https://github.com/odysian/aws-incident-response-lab) - Troubleshooting scenarios (Week 2)
-- **AWS Terraform Infrastructure** - Terraform based rebuild (Week 3)
+### Security Practices
+- Implemented least‑privilege app user pattern for RDS.  
+- Enforced IMDSv2 and restricted SG relationships.  
+- Added WAF with managed rule groups.  
+- Hardened TLS via explicit ALB SSL policy.  
+- Ensured all logs (ALB, CloudTrail, RDS) go to S3/CloudWatch. 
 
+
+
+## Related Labs
+
+- **Week 1:** CloudWatch Monitoring  
+  https://github.com/odysian/aws-cloudwatch-monitoring  
+- **Week 2:** Incident Response Lab  
+  https://github.com/odysian/aws-incident-response-lab  
+- **Week 3:** Terraform Infrastructure (this repo)  
