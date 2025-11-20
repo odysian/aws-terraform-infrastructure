@@ -1,207 +1,137 @@
 # Security Overview
 
-This document summarizes the main security controls in this Terraform-based environment and highlights areas for future hardening.
+This document covers the primary security controls and highlights areas for future hardening.
 
-## Scope & Assumptions
+## Scope
 
-- Single AWS account used for learning and lab work (not multi-account production).
-- Terraform runs from a trusted workstation within a VMware Ubuntu system with IAM credentials managed outside this repo.
-- Focus areas:
-  - Network and access boundaries
-  - Secrets and data protection
-  - Logging, monitoring, and observability
+- Single AWS account (learning/lab environment)
+- Terraform runs from trusted workstation
+- Focus: network boundaries, secrets management, logging
 
 ## Network Security
 
-**VPC & Subnets**
-- 2 public subnets (ALB + EC2)
-- 2 private subnets (RDS only)
-- Internet Gateway attached to VPC with a single public route table
-- RDS is not publicly accessible and has no direct internet route
+**VPC Design**
+- Public subnets: ALB and EC2 instances
+- Private subnets: RDS only (no internet route)
+- Internet Gateway with public route table
 
 **Security Groups**
-- **ALB SG**
-  - Inbound: HTTP 80 and HTTPS 443 from the internet
-  - Outbound: HTTP/HTTPS to web instances
-- **Web Instance SG**
-  - Inbound: HTTP 80 from ALB SG only
-  - No direct inbound from the internet
-  - Remote access is via SSM Session Manager, not SSH
-- **DB SG**
-  - Inbound: MySQL 3306 from Web Instance SG only
-  - No inbound from ALB, internet, or arbitrary CIDR
+- **ALB SG:** HTTP/HTTPS from internet → ALB
+- **Web SG:** HTTP from ALB SG only (no direct internet access)
+- **DB SG:** MySQL 3306 from Web SG only
+- Remote access via SSM Session Manager (no SSH)
 
-**WAF / Edge Protection**
-- Web ACL: `REGIONAL` scope attached to the ALB
-- Uses AWSManagedRulesCommonRuleSet, KnownBadInputs, SQLi rule groups
-- Visibility enabled to CloudWatch for metrics / sampled requests
+**WAF Protection**
+- Web ACL attached to ALB (REGIONAL scope)
+- AWS managed rule groups:
+  - Common Rule Set
+  - Known Bad Inputs
+  - SQL Injection
+- Metrics and sampled requests sent to CloudWatch
 
 ## Instance Hardening
 
-**Metadata Service**
-- IMDSv2 enforced on all EC2 instances:
-  - `http_tokens = "required"`
-  - `http_endpoint = "enabled"`
-  - `http_put_response_hop_limit = 1`
-- Application sample code uses IMDSv2 to read instance metadata (instance ID, AZ, etc.)
+**IMDSv2 Enforcement**
+- `http_tokens = "required"`
+- `http_endpoint = "enabled"`
+- `http_put_response_hop_limit = 1`
+- Application uses IMDSv2 to read instance metadata
 
-**Access to Instances**
-- No SSH key pairs or port 22 rules are configured
-- Management access is intended via:
-  - AWS Systems Manager (SSM) using the `AmazonSSMManagedInstanceCore` managed policy
+**Access Control**
+- No SSH key pairs or port 22 rules
+- Management via AWS Systems Manager (SSM)
 
-## Identity & Access Management (IAM)
+## IAM
 
 **EC2 IAM Role**
-- `Principal: { Service: "ec2.amazonaws.com" }`
-- Attached policies:
-  - `AmazonSSMManagedInstanceCore` (managed) – SSM access
-  - `CloudWatchAgentServerPolicy` (managed) – metrics/logs publishing
-  - Inline policy for Secrets Manager (least privilege):
-    - `Action: secretsmanager:GetSecretValue`
-    - `Resource: <db-credentials-secret-arn>`
-- Least privilege for the EC2 role (scoped to a single secret)
+- Managed policies:
+  - `AmazonSSMManagedInstanceCore`
+  - `CloudWatchAgentServerPolicy`
+- Inline policy for Secrets Manager:
+  - `Action: secretsmanager:GetSecretValue`
+  - `Resource: <db-credentials-secret-arn>` (least privilege)
 
-## HTTPS / TLS Configuration
+## TLS Configuration
 
-TLS is terminated at the ALB: traffic between clients and the ALB is HTTPS, and traffic between the ALB and EC2 instances is HTTP inside the VPC.
+**ALB TLS Termination**
+- ACM certificate for `lab.odysian.dev`
+- SSL policy: `ELBSecurityPolicy-TLS13-1-2-2021-06` (AWS-managed)
+- Client ↔ ALB: HTTPS (encrypted)
+- ALB ↔ EC2: HTTP inside VPC
 
-- The Application Load Balancer terminates TLS on port 443 using an ACM certificate issued for lab.odysian.dev
-- The HTTPS listener uses an AWS-managed security policy:
-```
-ELBSecurityPolicy-TLS13-1-2-2021-06
-```
+## Secrets Management
 
-- This policy was selected in the AWS Console under:
-`EC2 → Load Balancers → <ALB> → Listeners → HTTPS : 443 → Security policy`
-- The Terraform configuration then references that same policy by name via the `ssl_policy` attribute on `aws_lb_listener.https`
-- Using an AWS-managed policy keeps cipher suites and protocol versions aligned with AWS recommendations, instead of managing individual ciphers by hand
+**AWS Secrets Manager Integration**
+1. Secret created outside Terraform (CLI/console) with JSON:
+   ```json
+   {"username": "...", "password": "...", "dbname": "..."}
+   ```
+2. Secret ARN passed to Terraform as variable
+3. EC2 IAM role granted `GetSecretValue` permission
+4. User data fetches secret at boot and writes `config.php`
+5. Application uses constants from `config.php`
 
-## Database Access / App User
-
-- The RDS instance is created via Terraform with a master database user (the RDS admin user).
-- The web application does not use the RDS master user. Instead, it connects using a separate, least-privilege application user that has only:
-  - SELECT, INSERT, UPDATE, and DELETE permissions on the application database schema.
-
-- Application DB credentials (username, password, dbname) are stored in AWS Secrets Manager. Terraform never sees the plaintext credentials; it only receives the secret ARN as an input variable.
-- On instance boot, user_data_v2.sh:
-  - Retrieves the secret from AWS Secrets Manager using the injected ARN.
-  - Parses the JSON payload.
-  - Writes a config.php file that the PHP application uses to connect to the database.
-
-- This design ensures:
-  - The running application uses a least-privilege DB identity.
-  - The RDS master user is reserved for administrative tasks via SSM and is not used by the web app.
-
-## Secrets Management (AWS Secrets Manager)
-
-The project uses AWS Secrets Manager to store and expose database credentials to the web tier.
-
-1. A Secrets Manager secret is created outside Terraform (CLI or console) with JSON like:
-
-    ```json
-    { "username": "...", "password": "...", "dbname": "..." }
-    ```
-
-2. The secret ARN is passed into Terraform as a root variable and then forwarded into the compute module.
-3. An inline policy is added to the EC2 IAM role allowing it access to the secret via `secretsmanager:GetSecretValue` on that specific ARN.
-4. User data calls `aws secretsmanager get-secret-value`, parses the JSON, and writes `config.php` with `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`.
-5. `index.php` includes `config.php` and uses those constants to connect to the database.
-
-- Credentials are only retrieved at runtime from Secrets Manager by instances with the correct IAM role
-- DB credentials never appear in:
-  - Terraform variable files under version control
-  - Terraform state
-  - User data template itself
-
+**Security Benefits**
+- Credentials never in Terraform state or user data
+- Runtime-only access via IAM
+- Least-privilege DB user (not RDS master)
 
 **Future Hardening**
-- Rotate the secret on a schedule (manual or via Lambda/Secrets Manager rotation)
-- Use a dedicated KMS key for the secret, with restricted key policy.
+- Automated secret rotation
+- Custom KMS key with restricted policy
 
-## Data Protection (RDS)
+## Database Security
 
-**Storage & Backups**
-- Storage encrypted at rest using AWS-managed KMS key.
-- Automated backups enabled (1-day retention for free-tier compliance)
-- Explicit backup and maintenance windows configured
-- Deletion protection enabled to reduce accidental data loss
+**RDS Hardening**
+- Storage encrypted at rest (KMS)
+- Automated backups (1-day retention)
+- Deletion protection enabled
+- Custom parameter group for slow query logging
 
-**Custom Parameter Group**
-- Custom parameter group attached to the instance:
-  - `slow_query_log = 1`
-  - `long_query_time = 2`
-- Provides better observability into inefficient queries without changing application code
+**Network Access**
+- Deployed in private subnets
+- Only accessible from Web SG on port 3306
 
-**Network & Access**
-- RDS deployed into private subnets
-- Only accessible from the DB SG (which only allows MySQL from the web SG)
+**Application Access**
+- Dedicated least-privilege user (SELECT, INSERT, UPDATE, DELETE)
+- RDS master user reserved for administrative tasks via SSM
 
-**Future Hardening**
-- Add read replicas and/or Multi-AZ for resilience (beyond free-tier)
+## Logging & Monitoring
 
-## Logging, Monitoring & Observability
+**CloudWatch**
+- Metrics and alarms for ASG, ALB, RDS
+- RDS log exports: `error`, `general`, `slowquery`
+- CloudWatch agent for instance-level metrics
+- SNS email notifications
 
-**CloudWatch Metrics & Alarms**
-- EC2 / ASG: CPU-based scale-out and scale-in alarms
-- ALB: Latency and unhealthy host alarms
-- RDS: CPU, storage, and freeable memory alarms
+**ALB Access Logs**
+- Written to encrypted S3 bucket
+- 30-day lifecycle rule
+- Public access blocked
+- Bucket policy allows ELB service account only
 
-**CloudWatch Logs**
-- RDS exports: `error`, `general`, `slowquery` log types to CloudWatch Logs
-- CloudWatch Agent delivers instance-level metrics to CloudWatch for dashboards/alarms
-
-**Notifications**
-- SNS topic with email subscription for alarm notifications
-
-**Future Hardening Ideas**
-- Enable and document AWS CloudTrail for API auditing
-- Add AWS Config rules or Security Hub / GuardDuty for continuous checks
-- Add dashboards focused on security signals (e.g., failed connections, spikes in 5xx/4xx)
-
-**ALB Log Storage**
-
-- ALB access logs are written to a dedicated S3 bucket with encryption and versioning enabled
-- Logs have 30-day lifecycle rule
-- Public access fully blocked via `aws_s3_bucket_public_access_block`
-- Bucket policy: Grants `s3:GetBucketAcl` and `s3:PutObject` only to the ELB service account
+**Account-Level Logging**
+- CloudTrail trail: `account-trail-terraform-webapp-env`
+- Multi-region, log file validation enabled
+- Logs to encrypted S3 bucket
+- Bucket policy allows CloudTrail service only
 
 ## Terraform State Security
 
-**Backend**
-- Remote state stored in an S3 bucket (encryption and versioning enabled)
-- DynamoDB table used for state locking to prevent concurrent modification
+**Remote State**
+- S3 bucket with encryption and versioning
+- DynamoDB table for state locking
+- Access limited to Terraform IAM identity and CI role
 
-**Security Considerations**
-- State may still contain some non-secret identifiers and ARNs; treat state bucket as sensitive
-- Access to S3 bucket and DynamoDB table should be limited to:
-  - Terraform IAM identity
-  - CI user/role
+**Considerations**
+- State contains ARNs and identifiers
+- Treat state bucket as sensitive
 
-## Account Security Baseline
-
-Included account-level security via the `security` module.
-
-- **CloudTrail**
-  - A multi-region AWS CloudTrail trail (`account-trail-terraform-webapp-env`) is enabled for the account
-  - The trail delivers logs to an encrypted S3 bucket
-  - There is no Public access to the CloudTrail log bucket, and the bucket policy only allows CloudTrail to:
-    - Read the bucket ACL
-    - Write log files
-  - Log file validation is enabled
-
-- **GuardDuty (optional)**
-  - The `security` module supports enabling an AWS GuardDuty detector via the `enable_guardduty` variable
-  - Since my account is free tier, I left GuardDuty disabled
-  
 ## Known Gaps & Future Work
 
-The following are intentionally out-of-scope for this iteration but are natural next steps:
-
-- **Stronger Egress Controls**
-  - Restrict outbound traffic from web instances and database to only required endpoints
-- **Patch & Compliance**
-  - Formal patching strategy using SSM Patch Manager
-  - Baseline configuration with SSM State Manager
-- **Multi-Account / Landing Zone**
-  - Separate dev/prod accounts and shared services for logging/security in a real production environment
+**Intentionally out-of-scope:**
+- Stricter egress controls on web instances
+- Formal patching strategy (SSM Patch Manager)
+- Multi-account setup (dev/prod separation)
+- GuardDuty (disabled for free-tier)
+- Security Hub / AWS Config rules

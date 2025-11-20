@@ -2,198 +2,198 @@
 
 ## Auto Scaling
 
-**Goal:** Verify ASG scale-out and scale-in on CPU thresholds
+**Test:** Verify CPU-based scaling policies
 
+**Configuration:**
 - Desired capacity: 2 instances
 - Scale-out: CPU > 70% for 4 minutes
 - Scale-in: CPU < 30% for 4 minutes
 
 **Steps:**
-- From both instances, ran:
-  ```bash
-  stress-ng --cpu 2 --cpu-load 90 --timeout 600s
-  ```
-- Observed:
-  - High-CPU alarm triggered and a 3rd instance was launched
-  - After stopping `stress-ng`, CPU dropped and low-CPU alarm triggered
-  - ASG terminated the extra instance after cooldown
+1. SSH to both instances via SSM
+2. Run stress test:
+   ```bash
+   stress-ng --cpu 2 --cpu-load 90 --timeout 600s
+   ```
+3. Observe high-CPU alarm trigger and 3rd instance launch
+4. Stop `stress-ng` and observe low-CPU alarm
+5. Confirm ASG terminates extra instance after cooldown
 
-## Infrastructure Validation
+## Database Connectivity
 
-### Database Connectivity
-From a web instance:
+**Test:** Verify RDS access from web tier
+
+From web instance:
 ```bash
 mysql -h terraform-webapp-dev-database.c0fekuwkkx5w.us-east-1.rds.amazonaws.com -u admin -p
 ```
 
-Confirmed successful login and application page reports healthy DB connection
+**Expected:** Successful login and application reports healthy DB connection
 
-### Load Balancer & Health Checks
+## Load Balancer
 
-Basic health check:
+**Health Check:**
 ```bash
 curl http://terraform-webapp-dev-alb-1107457006.us-east-1.elb.amazonaws.com/health.html
 ```
+**Expected:** Returns `OK`
 
-Round-robin distribution check:
+**Round-Robin Distribution:**
 ```bash
-for i in {1..10}; do   curl -s http://terraform-webapp-dev-alb-1107457006.us-east-1.elb.amazonaws.com/ | grep "Instance ID"; done
+for i in {1..10}; do
+  curl -s http://terraform-webapp-dev-alb-1107457006.us-east-1.elb.amazonaws.com/ | grep "Instance ID"
+done
 ```
+**Expected:** Load distributed across instances
 
-Confirmed health.html returns OK and load is spread between instances across loop iterations
+## CloudWatch Alarms
 
-### Note on viewing ALB log files (Windows)
+**Test:** Verify alarm state transitions
 
-- ALB access logs are stored as gzip-compressed files in the S3 log bucket.
-- On Linux, you can view them directly with tools like:
+**Methods:**
+- ASG CPU: `stress-ng` (see auto scaling test above)
+- Unhealthy targets: Stop Apache on one instance
+- RDS metrics: Run heavy queries to trigger CPU/storage alarms
 
-```bash
-gunzip -c 631353662337_elasticloadbalancing_...log.gz | head
-```
+**Expected:**
+- Alarms transition between `OK`, `ALARM`, `INSUFFICIENT_DATA`
+- SNS email notifications delivered
 
-- Windows extract all option doesn't handle .gz properly, install 7zip instead.
+## Terraform State Locking
 
-### CloudWatch Alarms
+**Test:** Verify DynamoDB locking prevents concurrent operations
 
-Verified alarm states by inducing conditions:
+**Steps:**
+1. Run `terraform plan` in first shell
+2. Immediately run `terraform plan` in second shell against same environment
 
-- ASG CPU utilization high/low (via `stress-ng`)
-- ALB unhealthy targets by temporarily stopping Apache on one instance
-- RDS low free storage / high CPU by running heavier queries
-
-Confirmed:
-- Alarms transitioned between `OK`, `ALARM`, and `INSUFFICIENT_DATA` as expected
-- Notifications delivered to SNS email subscription
-
-## Terraform & Remote State
-
-### Backend & Locking
-
-- State stored in S3 bucket with versioning enabled
-- DynamoDB table configured for state locking
-
-Locking check:
-- Ran `terraform plan` in two shells against the same environment
-- Second plan failed with a lock error until the first completed
+**Expected:** Second plan fails with lock error until first completes
 
 ## RDS Slow Query Logging
 
-**Goal:** Confirm custom parameter group and CloudWatch log exports
+**Test:** Confirm custom parameter group and CloudWatch log exports
 
-- Parameter group:
-  - `slow_query_log = 1`
-  - `long_query_time = 2`
+**Configuration:**
+- `slow_query_log = 1`
+- `long_query_time = 2`
 
-**Test:**
-From the RDS instance (via MySQL client):
+**Steps:**
+1. Connect to RDS via MySQL client
+2. Run test queries:
+   ```sql
+   CREATE TABLE IF NOT EXISTS slow_test (
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       padding CHAR(200) NOT NULL,
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   );
 
-```sql
-CREATE TABLE IF NOT EXISTS slow_test (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    padding CHAR(200) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+   INSERT INTO slow_test (padding)
+   SELECT REPEAT('x', 200)
+   FROM information_schema.tables
+   LIMIT 5000;
 
-INSERT INTO slow_test (padding)
-SELECT REPEAT('x', 200)
-FROM information_schema.tables
-LIMIT 5000;
+   SELECT SLEEP(3);
+   SELECT * FROM slow_test ORDER BY padding DESC LIMIT 1000;
+   ```
+3. Check CloudWatch Logs: `/aws/rds/instance/terraform-webapp-dev-database/slowquery`
 
+**Expected:** Entries showing `Query_time > 2` seconds
+
+**Example log entry:**
+```
+# Time: 2025-11-18T04:04:50.953323Z
+# User@Host: admin[admin] @ [10.0.2.86] Id: 14
+# Query_time: 3.000274 Lock_time: 0.000000 Rows_sent: 1 Rows_examined: 1
+SET timestamp=1763438687;
 SELECT SLEEP(3);
-SELECT * FROM slow_test ORDER BY padding DESC LIMIT 1000;
 ```
 
-In CloudWatch Logs (`/aws/rds/instance/terraform-webapp-dev-database/slowquery`), confirmed entries with:
+## WAF Protection
 
-- `Query_time` > 2 seconds.
-- Matching `SELECT SLEEP(3);` and large `SELECT` statements.
+### SQL Injection Test
 
-```
-# Time: 2025-11-18T04:04:50.953323Z # User@Host: admin[admin] @ [10.0.2.86] Id: 14 # Query_time: 3.000274 Lock_time: 0.000000 Rows_sent: 1 Rows_examined: 1 SET timestamp=1763438687; SELECT SLEEP(3);
-```
+**Test:** Verify AWS managed SQLi rules block malicious payloads
 
-## WAF / Edge Protection
-
-### SQL injection-style payload blocked
-
-**Goal:** Confirm the AWS managed SQL injection rules are active and inspecting traffic on `lab.odysian.dev`.
-
-**Test:**
-
-From a terminal:
 ```bash
 curl -k "https://lab.odysian.dev/?user=admin'%20OR%201=1--"
 ```
-**Expected:**
-- Response returns an HTTP 403 Forbidden status from the ALB
-- Request does not reach the application
 
-**Console verification:**
-- WAF & Shield -> Web ACLs -> terraform-webapp-dev-web-acl
-- View dashboard, logs, and sampled requests tab
-- Bottom of the console is a sampled requests table
-- Filter on Action = BLOCK
-- Confirm:
-  - Request URI matches SQLi query string
-  - Source IP matches client used for testing
-  - Matched rule is `AWS#AWSManagedRulesSQLiRuleSet#SQLi_QUERYARGUMENTS`
+**Expected:** HTTP 403 Forbidden (request blocked before reaching application)
+
+**Console Verification:**
+1. WAF & Shield → Web ACLs → `terraform-webapp-dev-web-acl`
+2. Sampled requests tab → Filter: Action = BLOCK
+3. Confirm:
+   - Request URI matches SQLi query string
+   - Matched rule: `AWS#AWSManagedRulesSQLiRuleSet#SQLi_QUERYARGUMENTS`
 
 ![Web Application Firewall Test](images/WAF-Test.png)
 
-### Known bad input blocked
+### XSS Test
 
-**Goal:** Confirm the common rules set group is active.
+**Test:** Verify common rule set blocks known bad input
 
-**Test:**
-
-From a terminal:
 ```bash
 curl "https://lab.odysian.dev/?q=<script>alert(1)</script>" -v
 ```
 
-**Expected:**
-- Response is blocked (HTTP 403 / non-200)
-- Request does not reach the app
+**Expected:** HTTP 403 Forbidden
 
-**Console verification:**
-
-- Rules tab → select terraform-webapp-dev_waf_common → View sampled requests
-- Filter on Blocked requests and confirm the payload and source IP appear as expected
+**Console Verification:**
+1. Rules tab → `terraform-webapp-dev_waf_common`
+2. View sampled requests → Filter: Blocked
+3. Confirm payload and source IP appear
 
 ![Web Application Firewall Test 2](images/WAF-Test2.png)
 
-## Security Baseline Checks
+## CloudTrail Verification
 
-### CloudTrail
+**Test:** Confirm account-level audit logging is active
 
-1. Go to **CloudTrail → Trails** in the AWS console.
-2. Verify a trail named `account-trail-<project_name>` exists and is:
-   - Using the `cloudtrail-logs-<project_name>-<account-id>` S3 bucket
-3. In the S3 console, open the `cloudtrail-logs-<project_name>-<account-id>` bucket and confirm:
-   - Recent log files exist under `AWSLogs/<account-id>/CloudTrail/...` 
+**Steps:**
+1. CloudTrail → Trails in AWS Console
+2. Verify trail: `account-trail-<project_name>`
+3. Check S3 bucket: `cloudtrail-logs-<project_name>-<account-id>`
+4. Confirm recent log files under `AWSLogs/<account-id>/CloudTrail/...`
+
+## ALB Access Logs
+
+**Viewing on Windows:**
+- ALB logs are gzip-compressed in S3
+- Windows native extract doesn't handle `.gz` properly
+- Use 7-Zip or similar tool
+
+**Viewing on Linux:**
+```bash
+gunzip -c 631353662337_elasticloadbalancing_...log.gz | head
+```
 
 ## Troubleshooting Notes
 
-- **Misconfigured RDS security group after initial modularization**
-  - Symptom: 504s from ALB and timeouts from `curl` and `nc` to RDS endpoint
-  - Root cause: RDS using the web SG instead of the DB SG
-  - Fix: Corrected DB SG output in networking module and re-applied
-  - Result: Application came up cleanly and DB connection succeeded
+### RDS Connectivity Issue (Post-Modularization)
+**Symptom:** 504s from ALB, timeouts from `curl`/`nc` to RDS endpoint
 
-- **SSM / Session Manager connectivity regression**
-  - Symptom: New EC2 instances stopped appearing as managed nodes in Systems Manager (Session Manager showed "SSM Agent is not online"), even though IAM and networking were unchanged.
-  - Investigation:
-    - Launch Template was using the latest Amazon Linux 2023 AMI via `most_recent = true`.
-    - CloudTrail showed the AMI ID for new instances changed sometime after 22:49 UTC on Nov 17.
-    - Launching a test instance from the newer AMI confirmed that `amazon-ssm-agent` was not installed/running by default.
-  - Root cause: The data source `data "aws_ami" "amazon_linux_2023"` silently moved the environment to a newer AL2023 image that no longer had the SSM Agent preinstalled, so instances came up without a running agent.
-  - Fix:
-    - Updated user data to explicitly install and start the SSM Agent on boot:
-      ```bash
-      dnf install -y amazon-ssm-agent || true
-      systemctl enable amazon-ssm-agent
-      systemctl restart amazon-ssm-agent || systemctl start amazon-ssm-agent
-      ```
-    - Verified instances showed as `Online` in Systems Manager Fleet Manager and were reachable via Session Manager.
-  - Lesson learned: Do not rely on AMI defaults for critical agents. Either pin a specific AMI ID and roll it forward on purpose, or treat bootstrap scripts as the source of truth for installing/running tools like SSM and CloudWatch Agent.
- 
+**Root Cause:** RDS using Web SG instead of DB SG after networking module refactor
+
+**Fix:** Corrected DB SG output in networking module and re-applied
+
+**Result:** Application connected successfully to database
+
+### SSM Agent Regression
+**Symptom:** New EC2 instances not appearing as managed nodes in Systems Manager and unable to connect through SSM.
+
+**Investigation:**
+- Launch Template used `most_recent = true` for Amazon Linux 2023 AMI
+- CloudTrail showed AMI ID changed on Nov 17
+- New AMI did not include SSM agent by default
+
+**Root Cause:** `data "aws_ami"` silently upgraded to newer AL2023 image without SSM agent preinstalled
+
+**Fix:** Updated user data to explicitly install and enable SSM agent:
+```bash
+dnf install -y amazon-ssm-agent || true
+systemctl enable amazon-ssm-agent
+systemctl restart amazon-ssm-agent || systemctl start amazon-ssm-agent
+```
+
+**Lesson Learned:** Do not rely on AMI defaults for critical agents. Either pin specific AMI IDs or treat bootstrap scripts as source of truth for required tooling.

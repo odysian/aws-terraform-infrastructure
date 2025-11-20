@@ -1,218 +1,115 @@
 # Architecture
 
-This document describes the application and architecture for the Terraform-based rebuild
+This document describes the 3-tier web application architecture deployed via Terraform.
 
-The goal is a simple, production-style 3-tier web application that is:
+Goal: A production-style, internet-facing application that is auto-scaled, observable, and uses least-privilege access patterns.
 
-- Internet-facing via an Application Load Balancer (ALB)
-- Auto-scaled across multiple AZs
-- Backed by a private RDS MySQL database
-- Observable via CloudWatch metrics, dashboards, and alarms
+## Request Flow
 
-## Logical Architecture
-
-The application follows a 3-tier pattern:
-
-1. **Presentation tier** – Application Load Balancer (ALB)
-2. **Web / application tier** – EC2 instances in an Auto Scaling Group
-3. **Data tier** – RDS MySQL instance in private subnets
-
-High-level request flow:
-
-1. Client sends HTTP(S) request to the ALB at `lab.odysian.dev` (public endpoint)
-2. ALB:
-   - Redirects HTTP :80 traffic to HTTPS :443
-   - Terminates TLS on HTTPS :443 and forwards the request to healthy EC2 instances in the target grou
-3. EC2 instance:
-   - Reads configuration written by user data (`config.php`)
-   - Uses DB credentials from Secrets Manager
-   - Connects to RDS over the private network and returns the response
-4. RDS executes queries and returns results to the web tier
+1. Client connects to `lab.odysian.dev` (public DNS)
+2. ALB redirects HTTP → HTTPS and terminates TLS
+3. ALB forwards requests to healthy EC2 instances in the target group
+4. EC2 instances connect to RDS MySQL over the private network
+5. Response flows back through ALB to the client
 
 ## Network Topology
 
-**VPC & Subnets**
-
-- Single VPC dedicated to this project
-- **Public subnets (2)** – One per AZ, used for:
-  - Application Load Balancer
-  - Web EC2 instances
-- **Private subnets (2)** – One per AZ, used for:
-  - RDS MySQL instance
-- **Routing**
-  - Internet Gateway attached to the VPC
-  - Public route table with default route (`0.0.0.0/0 → IGW`) associated to public subnets
-  - Private subnets have no direct route to the internet
+**VPC Layout**
+- Single VPC with Internet Gateway
+- **Public subnets (2):** ALB and web EC2 instances
+- **Private subnets (2):** RDS MySQL (no direct internet route)
 
 **Security Groups**
+- **ALB SG:** HTTP/HTTPS from internet → ALB only
+- **Web SG:** HTTP from ALB SG only (no direct internet access)
+- **DB SG:** MySQL 3306 from Web SG only
 
-- **ALB SG**
-  - Inbound: HTTP 80 from the internet
-  - Outbound: HTTP/HTTPS to the web instance SG
-- **Web Instance SG**
-  - Inbound: HTTP 80 from ALB SG only
-  - No direct inbound from the internet
-- **DB SG**
-  - Inbound: MySQL 3306 from the web instance SG only
-  - No inbound from ALB or public CIDRs
-
-### HTTPS / Entry Point
-
-- Public entry point: https://lab.odysian.dev
-- Application Load Balancer exposes:
-  - HTTP :80 listener that redirects all traffic to HTTPS
-  - HTTPS :443 listener that terminates TLS using an ACM certificate for lab.odysian.dev
-- ALB then forwards plain HTTP traffic on port 80 to the web instances in the target group
-- ALB is protected by an AWS WAF v2 Web ACL using AWS managed rule groups for baseline protection
-
-For TLS policy details and certificate configuration, see [SECURITY.md](SECURITY.md).
-
-#### TLS termination flow
-
-1. Client connects to `http://lab.odysian.dev` on port 80  
-   - The ALB HTTP listener returns an HTTP 301 redirect to `https://lab.odysian.dev/...`
-
-2. Client follows the redirect and connects to `https://lab.odysian.dev` on port 443  
-   - The ALB presents the ACM certificate for `lab.odysian.dev`  
-   - The browser and ALB complete the TLS handshake using the configured AWS-managed security policy
-
-3. After TLS is established, the ALB terminates TLS and forwards the request to the target group over HTTP on port 80  
-   - Traffic between the client and ALB is HTTPS (encrypted)  
-   - Traffic between the ALB and EC2 instances is HTTP inside the VPC
+**TLS & Entry Point**
+- Public endpoint: `https://lab.odysian.dev`
+- HTTP :80 listener redirects all traffic to HTTPS
+- HTTPS :443 listener terminates TLS using ACM certificate
+- ALB forwards plain HTTP to target group inside VPC
+- WAF Web ACL protects the ALB with AWS managed rule groups
 
 ## Compute Layer
 
 **Launch Template**
-
-- AMI: Amazon Linux 2023 (via `data "aws_ami"`)
+- Amazon Linux 2023 (via `data "aws_ami"`)
 - Instance type: `t3.micro`
-- Security group: Web instance SG
-- **Instance metadata (IMDSv2)**
-  - `http_tokens = "required"`
-  - `http_endpoint = "enabled"`
-  - `http_put_response_hop_limit = 1`
+- IMDSv2 enforced (`http_tokens = "required"`)
 
-**User Data**
-
-User data script (`scripts/user_data_v2.sh`) is responsible for:
-
-1. Installing Apache + PHP
-2. Discovering the region via IMDSv2
-3. Fetching DB credentials from AWS Secrets Manager
-4. Writing `config.php` with `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`
-5. Writing `index.php` that:
-   - Shows EC2 instance metadata (ID, AZ, IP, server time)
-   - Connects to MySQL and reports connection status
-6. Creating `/health.html` for ALB health checks
-7. Installing and configuring the CloudWatch agent
+**User Data** (`scripts/user_data_v2.sh`)
+1. Installs Apache, PHP, CloudWatch agent
+2. Discovers region via IMDSv2
+3. Fetches DB credentials from Secrets Manager
+4. Writes `config.php` with database connection constants
+5. Creates `index.php` showing instance metadata and DB status
+6. Creates `/health.html` for ALB health checks
+7. Installs and enables SSM agent
 
 **Auto Scaling Group**
-
-- ASG spans both public subnets
-- Desired / min / max capacity defined per environment (`terraform.tfvars`)
+- Spans both public subnets
+- Desired/min/max capacity set per environment
 - Attached to ALB target group
+- CPU-based scaling policies (high/low thresholds)
 
 **Load Balancer**
-
-- Application Load Balancer (ALB) in public subnets
-- Listeners:
-  - HTTP :80 - redirects all requests to HTTPS
-  - HTTPS :443 - terminates TLS using the ACM certificate for `lab.odysian.dev` and forwards to the target group on port 80
-- Target group:
-  - Protocol HTTP, port 80
-  - Health check path `/health.html`
+- Application Load Balancer in public subnets
+- HTTP :80 → HTTPS :443 redirect
+- HTTPS :443 → target group on port 80
+- Health check: `/health.html`
+- SSL policy: `ELBSecurityPolicy-TLS13-1-2-2021-06`
 
 ## Database Layer
 
 **RDS MySQL**
-
 - Engine: MySQL 8.0
 - Instance class: `db.t3.micro`
-- Deployed in private subnets (multi-AZ subnet group, single-AZ instance for now)
-
-**Hardening & Configuration**
-
-- Storage encrypted at rest (KMS)
-- Automated backups enabled (1-day retention for free-tier)
-- Explicit backup and maintenance windows
+- Deployed in private subnets (multi-AZ subnet group)
+- Storage encrypted (KMS)
+- Automated backups (1-day retention)
 - Deletion protection enabled
-- Custom parameter group:
-  - `slow_query_log = 1`
-  - `long_query_time = 2`
+
+**Custom Parameter Group**
+- `slow_query_log = 1`
+- `long_query_time = 2`
+- Log exports: `error`, `general`, `slowquery` → CloudWatch Logs
 
 **Connectivity**
-
-- Only web instance SG is allowed to connect on port 3306
-- Application uses credentials from Secrets Manager rather than static env vars or Terraform variables
+- Only Web SG allowed on port 3306
+- Application uses least-privilege user from Secrets Manager
+- RDS master user reserved for administrative tasks
 
 ## Monitoring
 
-**Metrics & Dashboards**
-
-- **CloudWatch Dashboard** includes:
-  - ASG / EC2: `CPUUtilization`
-  - ALB: `RequestCount`, `TargetResponseTime`, healthy/unhealthy host counts
-  - RDS: CPU, `FreeStorageSpace`, `FreeableMemory`, `DatabaseConnections`, `latency`
+**CloudWatch Dashboard**
+- ASG: CPU utilization
+- ALB: Request count, response time, healthy/unhealthy hosts
+- RDS: CPU, storage, memory, connections, latency
 
 **Alarms**
-
-- **ASG / EC2**
-  - High CPU → triggers scale-out policy
-  - Low CPU → triggers scale-in policy
-- **ALB**
-  - High response time
-  - Unhealthy target count
-- **RDS**
-  - High CPU
-  - Low storage
-  - Low freeable memory
+- ASG CPU high/low (triggers scaling policies)
+- ALB high response time and unhealthy targets
+- RDS high CPU, low storage, low memory
+- SNS topic sends email notifications
 
 **Logs**
+- RDS logs stream to CloudWatch Logs
+- ALB access logs written to S3
+- CloudWatch agent collects system metrics
 
-- RDS log exports:
-  - `error`, `general`, and `slowquery` logs streamed to CloudWatch Logs
-- CloudWatch agent on EC2 instances sends system-level metrics to CloudWatch
-
-**Notifications**
-
-- SNS topic used as alarm action target
-- Email subscription receives alarm notifications
-
-### ALB Access Logging
-
-- The Application Load Balancer is configured to write access logs to a dedicated S3 bucket
-- Bucket name pattern: `${project_name}-alb-logs-terraform-odys`
-- Logs are stored in a single, regional bucket for this environment
-- Access logging is enabled via the `access_logs` block on the ALB:
-  - `bucket = aws_s3_bucket.alb_logs.bucket`
-  - optional prefix for grouping ALB logs
-
-## Terraform Architecture
-
-The Terraform layout is intentionally modular and environment-aware
+## Terraform Layout
 
 **Modules**
-
-- **`modules/networking`**
-  - VPC, subnets, route tables, Internet Gateway
-  - ALB, web, and DB security groups
-- **`modules/compute`**
-  - AMI data source, IAM role + instance profile
-  - Launch Template, ASG, ALB, target group, listener
-  - Auto scaling policies
-- **`modules/database`**
-  - DB subnet group
-  - RDS instance and custom parameter group
-- **`modules/monitoring`**
-  - SNS topic + subscription
-  - CloudWatch dashboard and alarms
-
-The root module (`main.tf`) wires these together via inputs/outputs and exposes key outputs (ALB DNS, RDS endpoint, dashboard URL, etc.)
+- `networking`: VPC, subnets, route tables, security groups
+- `compute`: IAM role, launch template, ASG, ALB, scaling policies
+- `database`: RDS instance, parameter group, Secrets Manager secret
+- `monitoring`: SNS topic, CloudWatch dashboard and alarms
+- `waf`: Web ACL with managed rule groups
+- `security`: CloudTrail trail and log bucket
 
 **Environments**
-
-- Separate directories for `dev` and `prod` under `envs/`
-- Each environment:
-  - Has its own S3 backend and DynamoDB lock table
-  - Calls the same root module
-  - Uses its own `terraform.tfvars` for instance counts, DB identifiers, etc.
+- Separate directories: `envs/dev` and `envs/prod`
+- Each has its own S3 backend state key
+- Environment-specific variables via `.tfvars` files
+- Isolated resources (RDS, ALB, Secrets Manager ARN)
