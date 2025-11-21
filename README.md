@@ -57,6 +57,8 @@ This creates a simple dynamic PHP application that displays:
 - Database connection status  
 - MySQL version and server time
 
+![Web Appplication in browser](docs/images/webapp-browser.png)
+
 ## Repository Structure
 
 ```

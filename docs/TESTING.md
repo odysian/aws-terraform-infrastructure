@@ -19,6 +19,8 @@
 4. Stop `stress-ng` and observe low-CPU alarm
 5. Confirm ASG terminates extra instance after cooldown
 
+![Auto Scaling Scale Down](images/asg-scaling-down-activity.png)
+
 ## Database Connectivity
 
 **Test:** Verify RDS access from web tier
@@ -59,6 +61,8 @@ done
 - Alarms transition between `OK`, `ALARM`, `INSUFFICIENT_DATA`
 - SNS email notifications delivered
 
+![Auto Scaling Alarm](images/asg-alarm.png)
+
 ## Terraform State Locking
 
 **Test:** Verify DynamoDB locking prevents concurrent operations
@@ -68,6 +72,8 @@ done
 2. Immediately run `terraform plan` in second shell against same environment
 
 **Expected:** Second plan fails with lock error until first completes
+
+![State lock example](images/state-lock.png)
 
 ## RDS Slow Query Logging
 

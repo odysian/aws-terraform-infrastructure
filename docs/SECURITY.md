@@ -29,6 +29,8 @@ This document covers the primary security controls and highlights areas for futu
   - SQL Injection
 - Metrics and sampled requests sent to CloudWatch
 
+![Web Application Firewall](images/WAF.png)
+
 ## Instance Hardening
 
 **IMDSv2 Enforcement**
