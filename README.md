@@ -83,7 +83,6 @@ aws-terraform-infrastructure/
 
 ## Secrets Management (High Level)
 
-
 - Application DB credentials are stored in AWS Secrets Manager and fetched at boot by the EC2 instances via IAM.
 - The app uses a dedicated, least-privilege DB user.
 - Credentials never appear in Terraform state or user data.
@@ -97,13 +96,6 @@ User data fetches and parses the secret:
 ```bash
 aws secretsmanager get-secret-value   --secret-id "$DB_SECRET_ARN"   --query 'SecretString' --output text
 ```
-
-This pattern ensures:
-- No credentials in Terraform state  
-- No secrets in user data templates  
-- Runtime‑only credential access  
-
-If the RDS instance is destroyed and recreated, the application user must be recreated so the existing secret remains valid.
 
 ## Multi‑Environment Workflow
 
@@ -145,8 +137,6 @@ Terraform Cloud is not used: everything is deployed via local CLI and GitHub Act
 - Added WAF with managed rule groups.  
 - Hardened TLS via explicit ALB SSL policy.  
 - Ensured all logs (ALB, CloudTrail, RDS) go to S3/CloudWatch. 
-
-
 
 ## Related Labs
 
