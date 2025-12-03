@@ -4,9 +4,7 @@
 
 Terraform-based rebuild of my earlier AWS CloudWatch monitoring and incident-response labs. 
 
-It shifts the focus toward production-style patterns: modular design, separate environments, secrets management, hardened security, and automated scaling. 
-
-My goal is to deepen my operational fluency while learning through hands-on iterative projects.
+I shifted my focus toward production-style patterns: modular design, separate environments, secrets management, hardened security, and automated scaling. 
 
 This project provisions a full 3-tier web application using Terraform, with production-style operational controls.
 
